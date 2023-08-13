@@ -17,8 +17,8 @@ async fn axum(#[shuttle_shared_db::Postgres] pool: PgPool) -> shuttle_axum::Shut
         .context("failed to run migrations")?;
 
     let audio_routes = Router::new().route(
-        "/",
-        get(routes::audios::all_audios).post(routes::audios::new_audio),
+        "/:user_id",
+        get(routes::audios::all_audios_by).post(routes::audios::new_audio),
     );
 
     let user_routes = Router::new().route("/:id", get(routes::users::get_user));

@@ -1,13 +1,18 @@
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    Json,
+};
 use chrono::Utc;
 use sqlx::PgPool;
 
 use crate::{database, models::Audio};
 
-pub async fn all_audios(
+pub async fn all_audios_by(
     State(pool): State<PgPool>,
+    Path(user_id): Path<i64>,
 ) -> crate::Result<(StatusCode, Json<Vec<Audio>>)> {
-    let audios = database::get_audios(&pool).await?;
+    let audios = database::get_audios_by(&pool, user_id).await?;
     let audios = audios
         .into_iter()
         .map(|audio| Audio {
