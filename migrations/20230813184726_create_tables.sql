@@ -7,7 +7,7 @@ create table users (
 create table audios (
         id serial primary key,
         transcription text,
-        created_at timestamp not null,
+        created_at timestamp not null default now(),
         user_id int not null,
 
         foreign key (user_id)

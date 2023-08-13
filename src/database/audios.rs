@@ -15,3 +15,11 @@ pub async fn get_audios_by(pool: &PgPool, user_id: i64) -> sqlx::Result<Vec<DbAu
         .fetch_all(pool)
         .await
 }
+
+pub async fn new_audio_by(pool: &PgPool, user_id: i64) -> sqlx::Result<i64> {
+    let id: (i64,) = sqlx::query_as("insert into audios(user_id) values ($1) returning id")
+        .bind(user_id)
+        .fetch_one(pool)
+        .await?;
+    Ok(id.0)
+}
