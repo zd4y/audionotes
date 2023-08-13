@@ -18,9 +18,11 @@ async fn axum(#[shuttle_shared_db::Postgres] pool: PgPool) -> shuttle_axum::Shut
         .await
         .context("failed to run migrations")?;
 
-    tokio::fs::create_dir(UPLOADS_DIRECTORY)
-        .await
-        .context("failed to create the uploads directory")?;
+    if !std::path::Path::new(UPLOADS_DIRECTORY).exists() {
+        tokio::fs::create_dir(UPLOADS_DIRECTORY)
+            .await
+            .context("failed to create the uploads directory")?;
+    }
 
     let user_routes = Router::new()
         .route("/:user_id", get(routes::users::get_user))
