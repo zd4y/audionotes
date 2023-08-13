@@ -15,7 +15,7 @@ use crate::{api_error::ApiError, database, models::Audio};
 
 pub async fn all_audios_by(
     State(pool): State<PgPool>,
-    Path(user_id): Path<i64>,
+    Path(user_id): Path<i32>,
 ) -> crate::Result<(StatusCode, Json<Vec<Audio>>)> {
     let audios = database::get_audios_by(&pool, user_id).await?;
     let audios = audios
@@ -31,7 +31,7 @@ pub async fn all_audios_by(
 
 pub async fn new_audio(
     State(pool): State<PgPool>,
-    Path(user_id): Path<i64>,
+    Path(user_id): Path<i32>,
     body: BodyStream,
 ) -> crate::Result<StatusCode> {
     let id = database::new_audio_by(&pool, user_id).await?;

@@ -9,7 +9,7 @@ use crate::{database, models::User};
 
 pub async fn get_user(
     State(pool): State<PgPool>,
-    Path(user_id): Path<i64>,
+    Path(user_id): Path<i32>,
 ) -> crate::Result<(StatusCode, Json<Option<User>>)> {
     let user = database::get_user(&pool, user_id).await?;
 
