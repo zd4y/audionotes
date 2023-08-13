@@ -1,4 +1,5 @@
 mod api_error;
+mod database;
 mod models;
 mod routes;
 
