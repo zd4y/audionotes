@@ -8,5 +8,5 @@ create table audios (
 create table users (
         id serial primary key,
         username VARCHAR (50) unique not null,
-        password VARCHAR (255) not null
+        password VARCHAR (255)
 );

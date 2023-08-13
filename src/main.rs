@@ -1,5 +1,8 @@
+mod api_error;
 mod models;
 mod routes;
+
+pub use api_error::Result;
 
 use anyhow::Context;
 use axum::{routing::get, Router};

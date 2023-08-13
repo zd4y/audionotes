@@ -2,12 +2,12 @@ use serde::Serialize;
 
 #[derive(Serialize)]
 pub struct User {
-    pub id: u32,
+    pub id: i64,
     pub username: String,
 }
 
 #[derive(Serialize)]
 pub struct Audio {
-    pub id: u32,
+    pub id: i64,
     pub transcription: Option<String>,
 }
