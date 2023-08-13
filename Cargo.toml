@@ -8,3 +8,4 @@ axum = "0.6.18"
 shuttle-axum = "0.23.0"
 shuttle-runtime = "0.23.0"
 tokio = "1.28.2"
+serde = { version = "1.0", features = ["derive"] }

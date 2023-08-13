@@ -1,12 +1,22 @@
-use axum::{routing::get, Router};
+mod models;
+mod routes;
 
-async fn hello_world() -> &'static str {
-    "Hello, world!"
-}
+use axum::{routing::get, Router};
 
 #[shuttle_runtime::main]
 async fn axum() -> shuttle_axum::ShuttleAxum {
-    let router = Router::new().route("/", get(hello_world));
+    let audio_routes = Router::new().route(
+        "/",
+        get(routes::audios::all_audios).post(routes::audios::new_audio),
+    );
 
-    Ok(router.into())
+    let user_routes = Router::new().route("/:id", get(routes::users::get_user));
+
+    let api_routes = Router::new()
+        .nest("/audios", audio_routes)
+        .nest("/users", user_routes);
+
+    let app = Router::new().nest("/api", api_routes);
+
+    Ok(app.into())
 }
