@@ -8,7 +8,7 @@ pub struct DbUser {
 }
 
 pub async fn get_user(pool: &PgPool, id: i32) -> sqlx::Result<Option<DbUser>> {
-    sqlx::query_as("select id, username from users where id = $1")
+    sqlx::query_as("select id, username, password from users where id = $1")
         .bind(id)
         .fetch_optional(pool)
         .await
