@@ -115,8 +115,16 @@ pub async fn request_password_reset(
     let token_hash = hash(&token).map_err(|_| ApiError::InternalServerError)?;
     database::insert_token(&state.pool, user.id, token_hash).await?;
 
+    let email_body = format!(
+        r#"
+Follow this link for resetting your password: {}?token={}&user_id={}
+
+If you didn't initialize any password reset, you can safely ignore this message."#,
+        PASSWORD_RESET_LINK, token, user.id
+    );
+
     tokio::spawn(async move {
-        match send_email(&state.secret_store, &token, &user.email).await {
+        match send_email(&state.secret_store, email_body, &user.email).await {
             Ok(()) => {}
             Err(err) => tracing::error!("error sending email: {}", err),
         };
@@ -142,7 +150,7 @@ fn generate_token(rng: &dyn SecureRandom) -> anyhow::Result<String> {
 
 async fn send_email(
     secret_store: &SecretStore,
-    token: &str,
+    body: String,
     user_email: &str,
 ) -> anyhow::Result<()> {
     let to_mbox = match user_email.parse() {
@@ -157,10 +165,7 @@ async fn send_email(
         .to(to_mbox)
         .subject("Password reset link")
         .header(ContentType::TEXT_PLAIN)
-        .body(format!(
-            "Follow this link for resetting your password: {}?token={}\n\nIf you didn't initialize any password reset, you can safely ignore this message.",
-            PASSWORD_RESET_LINK, token
-        ))
+        .body(body)
         .unwrap();
 
     let creds = Credentials::new(
