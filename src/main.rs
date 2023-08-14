@@ -1,4 +1,5 @@
 mod api_error;
+mod claims;
 mod database;
 mod models;
 mod routes;
@@ -6,13 +7,15 @@ mod routes;
 use std::{ops::Deref, sync::Arc};
 
 pub use api_error::Result;
+pub use claims::Claims;
 
 use anyhow::Context;
 use axum::{
     extract::FromRef,
-    routing::{get, put},
-    Router,
+    routing::{get, post, put},
+    Extension, Router,
 };
+use jsonwebtoken::{DecodingKey, EncodingKey};
 use ring::rand::SystemRandom;
 use shuttle_secrets::SecretStore;
 use sqlx::PgPool;
@@ -38,24 +41,33 @@ async fn axum(
     }
 
     let rand_rng = SystemRandom::new();
+    let secret = secret_store.get("jwt_secret").unwrap();
+    let secret = secret.as_bytes();
+    let keys = Keys {
+        encoding: EncodingKey::from_secret(secret),
+        decoding: DecodingKey::from_secret(secret),
+    };
 
     let app_state = AppState(Arc::new(AppStateInner {
-        pool,
+        pool: pool.clone(),
         secret_store,
         rand_rng,
+        keys,
     }));
 
     let user_routes = Router::new()
+        .route("/authorize", post(authorize))
         .route("/reset-password", put(password_reset))
         .route("/request-reset-password", put(request_password_reset))
-        .route("/:user_id", get(get_user))
-        .route("/:user_id/audios", get(all_audios_by).post(new_audio))
-        .route("/:user_id/audios/:audio_id", get(get_audio_by))
-        .route("/:user_id/audios/:audio_id/file", get(get_audio_file_by));
+        .route("/me", get(get_user))
+        .route("/me/audios", get(all_audios).post(new_audio))
+        .route("/me/audios/:audio_id", get(get_audio))
+        .route("/me/audios/:audio_id/file", get(get_audio_file));
 
     let api_routes = Router::new()
         .nest("/users", user_routes)
-        .with_state(app_state);
+        .layer(Extension(app_state))
+        .layer(Extension(pool));
 
     let app = Router::new().nest("/api", api_routes);
 
@@ -69,6 +81,7 @@ pub struct AppStateInner {
     pool: PgPool,
     secret_store: SecretStore,
     rand_rng: SystemRandom,
+    keys: Keys,
 }
 
 impl FromRef<AppState> for PgPool {
@@ -83,4 +96,9 @@ impl Deref for AppState {
     fn deref(&self) -> &Self::Target {
         &self.0
     }
+}
+
+pub struct Keys {
+    encoding: EncodingKey,
+    decoding: DecodingKey,
 }

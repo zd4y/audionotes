@@ -2,31 +2,83 @@ use argon2::{
     password_hash::{rand_core::OsRng, SaltString},
     Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
 };
-use axum::{
-    extract::{Path, State},
-    http::StatusCode,
-    Json,
-};
-use chrono::Utc;
+use axum::{http::StatusCode, Extension, Json};
+use chrono::{Duration, Utc};
 use data_encoding::BASE64URL;
+use jsonwebtoken::{encode, Header};
 use lettre::{
     message::header::ContentType, transport::smtp::authentication::Credentials, AsyncSmtpTransport,
     AsyncTransport, Message, Tokio1Executor,
 };
 use ring::rand::SecureRandom;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use shuttle_secrets::SecretStore;
 use sqlx::PgPool;
 
-use crate::{api_error::ApiError, database, models::User, AppState};
+use crate::{api_error::ApiError, database, models::User, AppState, Claims};
 
 const TOKEN_BYTES: usize = 48;
 
+#[derive(Deserialize)]
+pub struct AuthPayload {
+    email: String,
+    password: String,
+}
+
+#[derive(Serialize)]
+pub struct AuthBody {
+    access_token: String,
+    token_type: String,
+}
+
+pub async fn authorize(
+    Extension(state): Extension<AppState>,
+    Json(payload): Json<AuthPayload>,
+) -> crate::Result<Json<AuthBody>> {
+    if payload.email.is_empty() || payload.password.is_empty() {
+        return Err(ApiError::BadRequest);
+    }
+
+    let user = match database::find_user_by_email(&state.pool, &payload.email).await? {
+        Some(user) => user,
+        None => return Err(ApiError::NotFound),
+    };
+
+    let password_hash = match user.password {
+        Some(password) => password,
+        None => return Err(ApiError::Unauthorized),
+    };
+
+    let parsed_hash =
+        PasswordHash::new(&password_hash).map_err(|_| ApiError::InternalServerError)?;
+    let password_correct = Argon2::default()
+        .verify_password(payload.password.as_bytes(), &parsed_hash)
+        .is_ok();
+
+    if !password_correct {
+        return Err(ApiError::Unauthorized);
+    };
+
+    let expiration_date = Utc::now() + Duration::days(30);
+    let claims = Claims {
+        user_id: user.id,
+        exp: expiration_date.timestamp(),
+    };
+
+    let token = encode(&Header::default(), &claims, &state.keys.encoding)
+        .map_err(|_| ApiError::InternalServerError)?;
+
+    Ok(Json(AuthBody {
+        access_token: token,
+        token_type: String::from("Bearer"),
+    }))
+}
+
 pub async fn get_user(
-    State(pool): State<PgPool>,
-    Path(user_id): Path<i32>,
+    Extension(pool): Extension<PgPool>,
+    claims: Claims,
 ) -> crate::Result<(StatusCode, Json<User>)> {
-    let user = database::get_user(&pool, user_id).await?;
+    let user = database::get_user(&pool, claims.user_id).await?;
 
     match user {
         Some(user) => Ok((
@@ -48,7 +100,7 @@ pub struct PasswordResetPayload {
 }
 
 pub async fn password_reset(
-    State(pool): State<PgPool>,
+    Extension(pool): Extension<PgPool>,
     Json(payload): Json<PasswordResetPayload>,
 ) -> crate::Result<StatusCode> {
     let db_tokens = database::get_user_tokens(&pool, payload.user_id).await?;
@@ -56,7 +108,7 @@ pub async fn password_reset(
     let mut matched_token = None;
 
     let payload_token = payload.token.as_bytes();
-
+    let argon2 = Argon2::default();
     let now = Utc::now();
 
     for db_token in db_tokens {
@@ -67,9 +119,7 @@ pub async fn password_reset(
 
         let parsed_hash =
             PasswordHash::new(&db_token.token).map_err(|_| ApiError::InternalServerError)?;
-        let token_correct = Argon2::default()
-            .verify_password(payload_token, &parsed_hash)
-            .is_ok();
+        let token_correct = argon2.verify_password(payload_token, &parsed_hash).is_ok();
 
         if token_correct {
             matched_token = Some(db_token);
@@ -95,7 +145,7 @@ pub struct RequestPasswordResetPayload {
 }
 
 pub async fn request_password_reset(
-    State(state): State<AppState>,
+    Extension(state): Extension<AppState>,
     Json(payload): Json<RequestPasswordResetPayload>,
 ) -> crate::Result<(StatusCode, &'static str)> {
     // TODO: Consider returning a generic message when there is an error instead of using `?`

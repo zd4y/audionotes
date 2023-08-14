@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-axum = "0.6.18"
+axum = { version = "0.6.18", features = ["headers"] }
 shuttle-axum = "0.23.0"
 shuttle-runtime = "0.23.0"
 tokio = "1.28.2"
@@ -21,3 +21,6 @@ shuttle-secrets = "0.23.0"
 ring = "0.16.20"
 data-encoding = "2.4.0"
 argon2 = "0.5.1"
+jsonwebtoken = "8.3.0"
+headers = "0.3.8"
+once_cell = "1.18.0"

@@ -6,6 +6,8 @@ pub type Result<T> = std::result::Result<T, ApiError>;
 pub enum ApiError {
     InternalServerError,
     NotFound,
+    Unauthorized,
+    BadRequest,
 }
 
 impl From<sqlx::Error> for ApiError {
@@ -17,12 +19,15 @@ impl From<sqlx::Error> for ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
-        match self {
+        let (status_code, msg) = match self {
             ApiError::InternalServerError => {
                 tracing::error!("sending error response: {:?}", self);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
             }
-            ApiError::NotFound => (StatusCode::NOT_FOUND, "Not found").into_response(),
-        }
+            ApiError::NotFound => (StatusCode::NOT_FOUND, "Not found"),
+            ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized"),
+            ApiError::BadRequest => (StatusCode::BAD_REQUEST, "Bad request"),
+        };
+        (status_code, msg).into_response()
     }
 }
