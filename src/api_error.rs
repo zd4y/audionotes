@@ -17,9 +17,9 @@ impl From<sqlx::Error> for ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
-        tracing::error!("sending error response: {:?}", self);
         match self {
             ApiError::InternalServerError => {
+                tracing::error!("sending error response: {:?}", self);
                 (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()
             }
             ApiError::NotFound => (StatusCode::NOT_FOUND, "Not found").into_response(),
