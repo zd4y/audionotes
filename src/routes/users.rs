@@ -132,6 +132,7 @@ pub async fn password_reset(
             hash(&payload.new_password).map_err(|_| ApiError::InternalServerError)?;
         database::update_user_password(&pool, payload.user_id, new_password_hash).await?;
         database::delete_user_tokens(&pool, payload.user_id).await?;
+        // TODO: send email confirming password change
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(ApiError::NotFound)
