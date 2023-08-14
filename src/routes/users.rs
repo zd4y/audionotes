@@ -148,12 +148,13 @@ pub async fn request_password_reset(
     Extension(state): Extension<AppState>,
     Json(payload): Json<RequestPasswordResetPayload>,
 ) -> crate::Result<(StatusCode, &'static str)> {
-    // TODO: Consider returning a generic message when there is an error instead of using `?`
-
-    let user = database::find_user_by_email(&state.pool, &payload.email).await?;
-    let user = match user {
+    let response = Ok((
+        StatusCode::ACCEPTED,
+        "If that email address is in our database, we will send you an email to reset your password."
+    ));
+    let user = match database::find_user_by_email(&state.pool, &payload.email).await? {
         Some(user) => user,
-        None => return Err(ApiError::NotFound),
+        None => return response,
     };
 
     let token = generate_token(&state.rand_rng).map_err(|_| ApiError::InternalServerError)?;
@@ -177,7 +178,7 @@ If you didn't initialize any password reset, you can safely ignore this message.
         };
     });
 
-    Ok((StatusCode::ACCEPTED, "If that email address is in our database, we will send you an email to reset your password."))
+    response
 }
 
 fn hash(password: &str) -> anyhow::Result<String> {
