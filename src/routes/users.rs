@@ -85,7 +85,7 @@ pub async fn get_user(
             StatusCode::OK,
             Json(User {
                 id: user.id,
-                username: user.username,
+                email: user.email,
             }),
         )),
         None => Err(ApiError::NotFound),
@@ -142,7 +142,6 @@ pub async fn password_reset(
 #[derive(Deserialize)]
 pub struct RequestPasswordResetPayload {
     email: String,
-    username: String,
 }
 
 pub async fn request_password_reset(
@@ -156,10 +155,6 @@ pub async fn request_password_reset(
         Some(user) => user,
         None => return Err(ApiError::NotFound),
     };
-
-    if user.username != payload.username {
-        return Err(ApiError::NotFound);
-    }
 
     let token = generate_token(&state.rand_rng).map_err(|_| ApiError::InternalServerError)?;
     let token_hash = hash(&token).map_err(|_| ApiError::InternalServerError)?;
