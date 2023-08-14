@@ -21,3 +21,16 @@ pub async fn find_user_by_email(pool: &PgPool, email: &str) -> sqlx::Result<Opti
         .fetch_optional(pool)
         .await
 }
+
+pub async fn update_user_password(
+    pool: &PgPool,
+    user_id: i32,
+    new_password: String,
+) -> sqlx::Result<()> {
+    sqlx::query("update users set password = $1 where id = $2")
+        .bind(new_password)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
