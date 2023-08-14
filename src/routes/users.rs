@@ -21,7 +21,6 @@ use sqlx::PgPool;
 use crate::{api_error::ApiError, database, models::User, AppState};
 
 const TOKEN_BYTES: usize = 48;
-const PASSWORD_RESET_LINK: &str = "http://127.0.0.1/";
 
 pub async fn get_user(
     State(pool): State<PgPool>,
@@ -115,12 +114,14 @@ pub async fn request_password_reset(
     let token_hash = hash(&token).map_err(|_| ApiError::InternalServerError)?;
     database::insert_token(&state.pool, user.id, token_hash).await?;
 
+    let link = state.secret_store.get("password_reset_link").unwrap();
+
     let email_body = format!(
         r#"
 Follow this link for resetting your password: {}?token={}&user_id={}
 
 If you didn't initialize any password reset, you can safely ignore this message."#,
-        PASSWORD_RESET_LINK, token, user.id
+        link, token, user.id
     );
 
     tokio::spawn(async move {
