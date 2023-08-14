@@ -11,7 +11,6 @@ pub use claims::Claims;
 
 use anyhow::Context;
 use axum::{
-    extract::FromRef,
     routing::{get, post, put},
     Extension, Router,
 };
@@ -82,12 +81,6 @@ pub struct AppStateInner {
     secret_store: SecretStore,
     rand_rng: SystemRandom,
     keys: Keys,
-}
-
-impl FromRef<AppState> for PgPool {
-    fn from_ref(state: &AppState) -> Self {
-        state.0.pool.clone()
-    }
 }
 
 impl Deref for AppState {
