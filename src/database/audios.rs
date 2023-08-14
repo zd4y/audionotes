@@ -1,11 +1,11 @@
-use chrono::NaiveDateTime;
+use chrono::{DateTime, Utc};
 use sqlx::{FromRow, PgPool};
 
 #[derive(FromRow)]
 pub struct DbAudio {
     pub id: i32,
     pub transcription: Option<String>,
-    pub created_at: NaiveDateTime,
+    pub created_at: DateTime<Utc>,
     pub user_id: i32,
 }
 

@@ -29,7 +29,7 @@ pub async fn get_audio_by(
         Some(audio) if audio.user_id == params.user_id => Ok(Json(Audio {
             id: audio.id,
             transcription: audio.transcription,
-            created_at: audio.created_at.and_utc(),
+            created_at: audio.created_at,
         })),
         None | Some(_) => Err(ApiError::NotFound),
     }
@@ -76,7 +76,7 @@ pub async fn all_audios_by(
         .map(|audio| Audio {
             id: audio.id,
             transcription: audio.transcription,
-            created_at: audio.created_at.and_utc(),
+            created_at: audio.created_at,
         })
         .collect();
     Ok((StatusCode::OK, Json(audios)))
