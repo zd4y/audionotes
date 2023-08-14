@@ -18,7 +18,7 @@ pub async fn get_audio(
     claims: Claims,
     Path(audio_id): Path<i32>,
 ) -> crate::Result<Json<Audio>> {
-    let audio = database::get_audio(&pool, audio_id).await?;
+    let audio = database::get_audio_by(&pool, audio_id, claims.user_id).await?;
     match audio {
         Some(audio) if audio.user_id == claims.user_id => Ok(Json(Audio {
             id: audio.id,
@@ -34,7 +34,7 @@ pub async fn get_audio_file(
     claims: Claims,
     Path(audio_id): Path<i32>,
 ) -> crate::Result<StreamBody<ReaderStream<tokio::fs::File>>> {
-    let audio = database::get_audio(&pool, audio_id).await?;
+    let audio = database::get_audio_by(&pool, audio_id, claims.user_id).await?;
 
     let audio = match audio {
         Some(audio) => audio,
