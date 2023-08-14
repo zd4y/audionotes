@@ -46,10 +46,8 @@ async fn axum(
     }));
 
     let user_routes = Router::new()
-        .route(
-            "/reset-password",
-            put(password_reset).post(request_password_reset),
-        )
+        .route("/reset-password", put(password_reset))
+        .route("/request-reset-password", put(request_password_reset))
         .route("/:user_id", get(get_user))
         .route("/:user_id/audios", get(all_audios_by).post(new_audio))
         .route("/:user_id/audios/:audio_id", get(get_audio_by))
