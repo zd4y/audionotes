@@ -13,6 +13,7 @@ use axum::{
     routing::{get, put},
     Router,
 };
+use ring::rand::SystemRandom;
 use shuttle_secrets::SecretStore;
 use sqlx::PgPool;
 
@@ -36,7 +37,13 @@ async fn axum(
             .context("failed to create the uploads directory")?;
     }
 
-    let app_state = AppState(Arc::new(AppStateInner { pool, secret_store }));
+    let rand_rng = SystemRandom::new();
+
+    let app_state = AppState(Arc::new(AppStateInner {
+        pool,
+        secret_store,
+        rand_rng,
+    }));
 
     let user_routes = Router::new()
         .route("/reset-password", put(request_password_reset))
@@ -60,6 +67,7 @@ pub struct AppState(Arc<AppStateInner>);
 pub struct AppStateInner {
     pool: PgPool,
     secret_store: SecretStore,
+    rand_rng: SystemRandom,
 }
 
 impl FromRef<AppState> for PgPool {

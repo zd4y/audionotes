@@ -3,10 +3,12 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use data_encoding::BASE64URL;
 use lettre::{
     message::header::ContentType, transport::smtp::authentication::Credentials, AsyncSmtpTransport,
     AsyncTransport, Message, Tokio1Executor,
 };
+use ring::rand::{self, Random, SecureRandom};
 use serde::Deserialize;
 use shuttle_secrets::SecretStore;
 use sqlx::PgPool;
@@ -53,16 +55,24 @@ pub async fn request_password_reset(
         return Err(ApiError::NotFound);
     }
 
-    let token = "123";
+    let token = generate_token(&state.rand_rng).map_err(|_| ApiError::InternalServerError)?;
+
+    // TODO: Save token to database
 
     tokio::spawn(async move {
-        match send_email(&state.secret_store, token, &user.email).await {
+        match send_email(&state.secret_store, &token, &user.email).await {
             Ok(()) => {}
             Err(err) => tracing::error!("error sending email: {}", err),
         };
     });
 
     Ok((StatusCode::ACCEPTED, "Email sent"))
+}
+
+fn generate_token(rng: &dyn SecureRandom) -> anyhow::Result<String> {
+    let random: Random<[u8; 48]> = rand::generate(rng)?;
+
+    Ok(BASE64URL.encode(&random.expose()))
 }
 
 async fn send_email(
@@ -83,7 +93,7 @@ async fn send_email(
         .subject("Password reset link")
         .header(ContentType::TEXT_PLAIN)
         .body(format!(
-            "Follow this link for resetting your password: {}?token={}",
+            "Follow this link for resetting your password: {}?token={}\n\nIf you didn't initialize any password reset, you can safely ignore this message.",
             PASSWORD_RESET_LINK, token
         ))
         .unwrap();
