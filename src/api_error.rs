@@ -5,6 +5,7 @@ pub type Result<T> = std::result::Result<T, ApiError>;
 #[derive(Debug)]
 pub enum ApiError {
     InternalServerError,
+    NotFound,
 }
 
 impl From<sqlx::Error> for ApiError {
@@ -21,6 +22,7 @@ impl IntoResponse for ApiError {
             ApiError::InternalServerError => {
                 (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()
             }
+            ApiError::NotFound => (StatusCode::NOT_FOUND, "Not found").into_response(),
         }
     }
 }

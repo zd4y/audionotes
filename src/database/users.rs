@@ -4,7 +4,7 @@ use sqlx::{FromRow, PgPool};
 pub struct DbUser {
     pub id: i32,
     pub username: String,
-    pub password: String,
+    pub password: Option<String>,
 }
 
 pub async fn get_user(pool: &PgPool, id: i32) -> sqlx::Result<Option<DbUser>> {

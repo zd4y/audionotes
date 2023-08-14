@@ -9,6 +9,8 @@ use anyhow::Context;
 use axum::{routing::get, Router};
 use sqlx::PgPool;
 
+use routes::{audios::*, users::*};
+
 const UPLOADS_DIRECTORY: &str = "uploads";
 
 #[shuttle_runtime::main]
@@ -25,11 +27,10 @@ async fn axum(#[shuttle_shared_db::Postgres] pool: PgPool) -> shuttle_axum::Shut
     }
 
     let user_routes = Router::new()
-        .route("/:user_id", get(routes::users::get_user))
-        .route(
-            "/:user_id/audios",
-            get(routes::audios::all_audios_by).post(routes::audios::new_audio),
-        );
+        .route("/:user_id", get(get_user))
+        .route("/:user_id/audios", get(all_audios_by).post(new_audio))
+        .route("/:user_id/audios/:audio_id", get(get_audio_by))
+        .route("/:user_id/audios/:audio_id/file", get(get_audio_file_by));
 
     let api_routes = Router::new().nest("/users", user_routes).with_state(pool);
 

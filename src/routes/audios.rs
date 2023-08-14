@@ -1,7 +1,7 @@
 use std::io;
 
 use axum::{
-    body::Bytes,
+    body::{Bytes, StreamBody},
     extract::{BodyStream, Path, State},
     http::StatusCode,
     BoxError, Json,
@@ -9,9 +9,54 @@ use axum::{
 use futures::{Stream, TryStreamExt};
 use sqlx::PgPool;
 use tokio::{fs::File, io::BufWriter};
-use tokio_util::io::StreamReader;
+use tokio_util::io::{ReaderStream, StreamReader};
 
 use crate::{api_error::ApiError, database, models::Audio};
+
+pub async fn get_audio_by(
+    State(pool): State<PgPool>,
+    Path(user_id): Path<i32>,
+    Path(audio_id): Path<i32>,
+) -> crate::Result<Json<Audio>> {
+    let audio = database::get_audio(&pool, audio_id).await?;
+    match audio {
+        Some(audio) if audio.user_id == user_id => Ok(Json(Audio {
+            id: audio.id,
+            transcription: audio.transcription,
+            created_at: audio.created_at,
+        })),
+        None | Some(_) => Err(ApiError::NotFound),
+    }
+}
+
+pub async fn get_audio_file_by(
+    State(pool): State<PgPool>,
+    Path(user_id): Path<i32>,
+    Path(audio_id): Path<i32>,
+) -> crate::Result<StreamBody<ReaderStream<tokio::fs::File>>> {
+    let audio = database::get_audio(&pool, audio_id).await?;
+
+    let audio = match audio {
+        Some(audio) => audio,
+        None => return Err(ApiError::NotFound),
+    };
+
+    if audio.user_id != user_id {
+        return Err(ApiError::NotFound);
+    }
+
+    let path_str = format!("{}/{}", crate::UPLOADS_DIRECTORY, audio.id);
+    let path = std::path::Path::new(&path_str);
+    let file = match tokio::fs::File::open(path).await {
+        Ok(file) => file,
+        Err(_) => return Err(ApiError::InternalServerError),
+    };
+
+    let stream = ReaderStream::new(file);
+    let body = StreamBody::new(stream);
+
+    Ok(body)
+}
 
 pub async fn all_audios_by(
     State(pool): State<PgPool>,

@@ -9,6 +9,13 @@ pub struct DbAudio {
     pub user_id: i32,
 }
 
+pub async fn get_audio(pool: &PgPool, id: i32) -> sqlx::Result<Option<DbAudio>> {
+    sqlx::query_as("select id, transcription, created_at, user_id from audios where id = $1")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+}
+
 pub async fn get_audios_by(pool: &PgPool, user_id: i32) -> sqlx::Result<Vec<DbAudio>> {
     sqlx::query_as("select id, transcription, created_at, user_id from audios where user_id = $1")
         .bind(user_id)
