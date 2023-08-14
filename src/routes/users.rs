@@ -56,31 +56,36 @@ pub async fn password_reset(
 
     let mut matched_token = None;
 
+    let payload_token = payload.token.as_bytes();
+
+    let now = Utc::now();
+
     for db_token in db_tokens {
+        if now >= db_token.expires_at {
+            database::delete_token(&pool, db_token.user_id, db_token.token).await?;
+            continue;
+        }
+
         let parsed_hash =
             PasswordHash::new(&db_token.token).map_err(|_| ApiError::InternalServerError)?;
         let token_correct = Argon2::default()
-            .verify_password(payload.token.as_bytes(), &parsed_hash)
+            .verify_password(payload_token, &parsed_hash)
             .is_ok();
 
         if token_correct {
             matched_token = Some(db_token);
+            break;
         }
     }
 
-    match matched_token {
-        Some(token) => {
-            if Utc::now() >= token.expires_at {
-                database::delete_token(&pool, token.user_id, token.token).await?;
-                return Err(ApiError::NotFound);
-            }
-            let new_password_hash =
-                hash(&payload.new_password).map_err(|_| ApiError::InternalServerError)?;
-            database::update_user_password(&pool, payload.user_id, new_password_hash).await?;
-            database::delete_user_tokens(&pool, payload.user_id).await?;
-            Ok(StatusCode::NO_CONTENT)
-        }
-        None => Err(ApiError::NotFound),
+    if matched_token.is_some() {
+        let new_password_hash =
+            hash(&payload.new_password).map_err(|_| ApiError::InternalServerError)?;
+        database::update_user_password(&pool, payload.user_id, new_password_hash).await?;
+        database::delete_user_tokens(&pool, payload.user_id).await?;
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(ApiError::NotFound)
     }
 }
 
