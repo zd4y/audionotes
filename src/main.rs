@@ -3,10 +3,17 @@ mod database;
 mod models;
 mod routes;
 
+use std::{ops::Deref, sync::Arc};
+
 pub use api_error::Result;
 
 use anyhow::Context;
-use axum::{routing::get, Router};
+use axum::{
+    extract::FromRef,
+    routing::{get, put},
+    Router,
+};
+use shuttle_secrets::SecretStore;
 use sqlx::PgPool;
 
 use routes::{audios::*, users::*};
@@ -14,7 +21,10 @@ use routes::{audios::*, users::*};
 const UPLOADS_DIRECTORY: &str = "uploads";
 
 #[shuttle_runtime::main]
-async fn axum(#[shuttle_shared_db::Postgres] pool: PgPool) -> shuttle_axum::ShuttleAxum {
+async fn axum(
+    #[shuttle_shared_db::Postgres] pool: PgPool,
+    #[shuttle_secrets::Secrets] secret_store: SecretStore,
+) -> shuttle_axum::ShuttleAxum {
     sqlx::migrate!()
         .run(&pool)
         .await
@@ -26,15 +36,42 @@ async fn axum(#[shuttle_shared_db::Postgres] pool: PgPool) -> shuttle_axum::Shut
             .context("failed to create the uploads directory")?;
     }
 
+    let app_state = AppState(Arc::new(AppStateInner { pool, secret_store }));
+
     let user_routes = Router::new()
+        .route("/reset-password", put(request_password_reset))
         .route("/:user_id", get(get_user))
         .route("/:user_id/audios", get(all_audios_by).post(new_audio))
         .route("/:user_id/audios/:audio_id", get(get_audio_by))
         .route("/:user_id/audios/:audio_id/file", get(get_audio_file_by));
 
-    let api_routes = Router::new().nest("/users", user_routes).with_state(pool);
+    let api_routes = Router::new()
+        .nest("/users", user_routes)
+        .with_state(app_state);
 
     let app = Router::new().nest("/api", api_routes);
 
     Ok(app.into())
+}
+
+#[derive(Clone)]
+pub struct AppState(Arc<AppStateInner>);
+
+pub struct AppStateInner {
+    pool: PgPool,
+    secret_store: SecretStore,
+}
+
+impl FromRef<AppState> for PgPool {
+    fn from_ref(state: &AppState) -> Self {
+        state.0.pool.clone()
+    }
+}
+
+impl Deref for AppState {
+    type Target = AppStateInner;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }

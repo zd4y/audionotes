@@ -3,9 +3,17 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use lettre::{
+    message::header::ContentType, transport::smtp::authentication::Credentials, AsyncSmtpTransport,
+    AsyncTransport, Message, Tokio1Executor,
+};
+use serde::Deserialize;
+use shuttle_secrets::SecretStore;
 use sqlx::PgPool;
 
-use crate::{api_error::ApiError, database, models::User};
+use crate::{api_error::ApiError, database, models::User, AppState};
+
+const PASSWORD_RESET_LINK: &str = "http://127.0.0.1/";
 
 pub async fn get_user(
     State(pool): State<PgPool>,
@@ -25,6 +33,76 @@ pub async fn get_user(
     }
 }
 
-pub async fn change_password() {
-    todo!()
+#[derive(Deserialize)]
+pub struct PasswordPayload {
+    email: String,
+    username: String,
+}
+
+pub async fn request_password_reset(
+    State(state): State<AppState>,
+    Json(payload): Json<PasswordPayload>,
+) -> crate::Result<(StatusCode, &'static str)> {
+    let user = database::find_user_by_email(&state.pool, &payload.email).await?;
+    let user = match user {
+        Some(user) => user,
+        None => return Err(ApiError::NotFound),
+    };
+
+    if user.username != payload.username {
+        return Err(ApiError::NotFound);
+    }
+
+    let token = "123";
+
+    tokio::spawn(async move {
+        match send_email(&state.secret_store, token, &user.email).await {
+            Ok(()) => {}
+            Err(err) => tracing::error!("error sending email: {}", err),
+        };
+    });
+
+    Ok((StatusCode::ACCEPTED, "Email sent"))
+}
+
+async fn send_email(
+    secret_store: &SecretStore,
+    token: &str,
+    user_email: &str,
+) -> anyhow::Result<()> {
+    let to_mbox = match user_email.parse() {
+        Ok(to) => to,
+        Err(_) => {
+            anyhow::bail!("failed parsing user email {}", user_email);
+        }
+    };
+
+    let email = Message::builder()
+        .from(secret_store.get("smtp_from").unwrap().parse().unwrap())
+        .to(to_mbox)
+        .subject("Password reset link")
+        .header(ContentType::TEXT_PLAIN)
+        .body(format!(
+            "Follow this link for resetting your password: {}?token={}",
+            PASSWORD_RESET_LINK, token
+        ))
+        .unwrap();
+
+    let creds = Credentials::new(
+        secret_store.get("smtp_username").unwrap(),
+        secret_store.get("smtp_password").unwrap(),
+    );
+
+    let mailer: AsyncSmtpTransport<Tokio1Executor> =
+        AsyncSmtpTransport::<Tokio1Executor>::relay(&secret_store.get("smtp_relay").unwrap())
+            .unwrap()
+            .credentials(creds)
+            .build();
+
+    match mailer.send(email).await {
+        Ok(_) => {}
+        Err(err) => anyhow::bail!("mailer.send(email) error: {}", err),
+    };
+
+    Ok(())
 }
