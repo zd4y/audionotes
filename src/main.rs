@@ -54,17 +54,20 @@ async fn axum(
         keys,
     }));
 
+    let audio_routes = Router::new()
+        .route("/", get(all_audios).post(new_audio))
+        .route("/:audio_id", get(get_audio))
+        .route("/:audio_id/file", get(get_audio_file));
+
     let user_routes = Router::new()
         .route("/authorize", post(authorize))
         .route("/reset-password", put(password_reset))
         .route("/request-reset-password", put(request_password_reset))
-        .route("/me", get(get_user))
-        .route("/me/audios", get(all_audios).post(new_audio))
-        .route("/me/audios/:audio_id", get(get_audio))
-        .route("/me/audios/:audio_id/file", get(get_audio_file));
+        .route("/me", get(get_user));
 
     let api_routes = Router::new()
         .nest("/users", user_routes)
+        .nest("/audios", audio_routes)
         .layer(Extension(app_state))
         .layer(Extension(pool));
 
