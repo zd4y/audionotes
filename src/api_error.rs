@@ -10,13 +10,6 @@ pub enum ApiError {
     BadRequest,
 }
 
-impl From<sqlx::Error> for ApiError {
-    fn from(error: sqlx::Error) -> Self {
-        tracing::error!("sqlx error: {}", error);
-        ApiError::InternalServerError
-    }
-}
-
 impl IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
         let (status_code, msg) = match self {
@@ -29,5 +22,19 @@ impl IntoResponse for ApiError {
             ApiError::BadRequest => (StatusCode::BAD_REQUEST, "Bad request"),
         };
         (status_code, msg).into_response()
+    }
+}
+
+impl From<sqlx::Error> for ApiError {
+    fn from(error: sqlx::Error) -> Self {
+        tracing::error!("sqlx error: {}", error);
+        ApiError::InternalServerError
+    }
+}
+
+impl From<anyhow::Error> for ApiError {
+    fn from(error: anyhow::Error) -> Self {
+        tracing::error!("anyhow error: {}", error);
+        ApiError::InternalServerError
     }
 }

@@ -128,8 +128,7 @@ pub async fn password_reset(
     }
 
     if matched_token.is_some() {
-        let new_password_hash =
-            hash(&payload.new_password).map_err(|_| ApiError::InternalServerError)?;
+        let new_password_hash = hash(&payload.new_password)?;
         database::update_user_password(&pool, payload.user_id, new_password_hash).await?;
         database::delete_user_tokens(&pool, payload.user_id).await?;
         // TODO: send email confirming password change
@@ -157,8 +156,8 @@ pub async fn request_password_reset(
         None => return response,
     };
 
-    let token = generate_token(&state.rand_rng).map_err(|_| ApiError::InternalServerError)?;
-    let token_hash = hash(&token).map_err(|_| ApiError::InternalServerError)?;
+    let token = generate_token(&state.rand_rng)?;
+    let token_hash = hash(&token)?;
     database::insert_token(&state.pool, user.id, token_hash).await?;
 
     let link = state.secret_store.get("password_reset_link").unwrap();
