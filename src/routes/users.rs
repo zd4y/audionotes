@@ -14,7 +14,6 @@ use lettre::{
 use ring::rand::SecureRandom;
 use serde::{Deserialize, Serialize};
 use shuttle_secrets::SecretStore;
-use sqlx::PgPool;
 
 use crate::{api_error::ApiError, database, models::User, AppState, Claims};
 
@@ -93,7 +92,7 @@ pub struct PasswordResetPayload {
 }
 
 pub async fn password_reset(
-    Extension(pool): Extension<PgPool>,
+    Extension(state): Extension<AppState>,
     Json(payload): Json<PasswordResetPayload>,
 ) -> crate::Result<StatusCode> {
     if payload.new_password.is_empty() {
@@ -105,7 +104,7 @@ pub async fn password_reset(
         let feedback = entropy.feedback().clone().unwrap();
         return Err(ApiError::WeakPassword(feedback));
     }
-    let db_tokens = database::get_user_tokens(&pool, payload.user_id).await?;
+    let db_tokens = database::get_user_tokens(&state.pool, payload.user_id).await?;
 
     let mut matched_token = None;
 
@@ -115,7 +114,7 @@ pub async fn password_reset(
 
     for db_token in db_tokens {
         if now >= db_token.expires_at {
-            database::delete_token(&pool, db_token.user_id, db_token.token).await?;
+            database::delete_token(&state.pool, db_token.user_id, db_token.token).await?;
             continue;
         }
 
@@ -129,11 +128,23 @@ pub async fn password_reset(
         }
     }
 
+    let user = match database::get_user(&state.pool, payload.user_id).await? {
+        Some(user) => user,
+        None => return Err(ApiError::NotFound),
+    };
+
     if matched_token.is_some() {
         let new_password_hash = hash(&payload.new_password)?;
-        database::update_user_password(&pool, payload.user_id, new_password_hash).await?;
-        database::delete_user_tokens(&pool, payload.user_id).await?;
-        // TODO: send email confirming password change
+        database::update_user_password(&state.pool, payload.user_id, new_password_hash).await?;
+        database::delete_user_tokens(&state.pool, payload.user_id).await?;
+
+        tokio::spawn(async move {
+            let email_body = "Your password has been reset successfully.";
+            match send_email(&state.secret_store, email_body.to_string(), &user.email).await {
+                Ok(()) => {}
+                Err(err) => tracing::error!("error sending email: {}", err),
+            };
+        });
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(ApiError::NotFound)
