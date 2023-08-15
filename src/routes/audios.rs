@@ -1,5 +1,6 @@
 use std::io;
 
+use anyhow::Context;
 use axum::{
     body::{Bytes, StreamBody},
     extract::{BodyStream, Path},
@@ -110,5 +111,6 @@ where
         Ok::<_, io::Error>(())
     }
     .await
-    .map_err(|_| ApiError::InternalServerError)
+    .context("failed to save file")?;
+    Ok(())
 }

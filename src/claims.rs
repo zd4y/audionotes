@@ -1,3 +1,4 @@
+use anyhow::Context;
 use axum::{
     async_trait,
     extract::{FromRequestParts, TypedHeader},
@@ -33,10 +34,7 @@ where
         let Extension(state) = parts
             .extract::<Extension<AppState>>()
             .await
-            .map_err(|err| {
-                tracing::error!("error getting state in Claims from_request_parts: {}", err);
-                ApiError::InternalServerError
-            })?;
+            .context("failed to get AppState in Claims FromRequestParts")?;
 
         // Decode the user data
         let token_data =

@@ -1,3 +1,4 @@
+use anyhow::Context;
 use argon2::{
     password_hash::{rand_core::OsRng, SaltString},
     Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
@@ -66,7 +67,7 @@ pub async fn authorize(
     };
 
     let token = encode(&Header::default(), &claims, &state.keys.encoding)
-        .map_err(|_| ApiError::InternalServerError)?;
+        .context("failed encoding jwt token")?;
 
     Ok(Json(AuthBody {
         access_token: token,
