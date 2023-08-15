@@ -139,8 +139,16 @@ pub async fn password_reset(
         database::delete_user_tokens(&state.pool, payload.user_id).await?;
 
         tokio::spawn(async move {
-            let email_body = "Your password has been reset successfully.";
-            match send_email(&state.secret_store, email_body.to_string(), &user.email).await {
+            let email_body = "Your password has been updated successfully.";
+            let subject = "Password updated";
+            match send_email(
+                &state.secret_store,
+                subject,
+                email_body.to_string(),
+                &user.email,
+            )
+            .await
+            {
                 Ok(()) => {}
                 Err(err) => tracing::error!("error sending email: {}", err),
             };
@@ -184,7 +192,8 @@ If you didn't initialize any password reset, you can safely ignore this message.
     );
 
     tokio::spawn(async move {
-        match send_email(&state.secret_store, email_body, &user.email).await {
+        let subject = "Password reset link";
+        match send_email(&state.secret_store, subject, email_body, &user.email).await {
             Ok(()) => {}
             Err(err) => tracing::error!("error sending email: {}", err),
         };
@@ -210,6 +219,7 @@ fn generate_token(rng: &dyn SecureRandom) -> anyhow::Result<String> {
 
 async fn send_email(
     secret_store: &SecretStore,
+    subject: &str,
     body: String,
     user_email: &str,
 ) -> anyhow::Result<()> {
@@ -223,7 +233,7 @@ async fn send_email(
     let email = Message::builder()
         .from(secret_store.get("smtp_from").unwrap().parse().unwrap())
         .to(to_mbox)
-        .subject("Password reset link")
+        .subject(subject)
         .header(ContentType::TEXT_PLAIN)
         .body(body)
         .unwrap();
