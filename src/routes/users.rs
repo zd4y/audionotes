@@ -63,6 +63,7 @@ pub async fn authorize(
     let expiration_date = Utc::now() + Duration::days(30);
     let claims = Claims {
         user_id: user.id,
+        email: user.email,
         exp: expiration_date.timestamp(),
     };
 
@@ -75,22 +76,13 @@ pub async fn authorize(
     }))
 }
 
-pub async fn get_user(
-    Extension(pool): Extension<PgPool>,
-    claims: Claims,
-) -> crate::Result<(StatusCode, Json<User>)> {
-    let user = database::get_user(&pool, claims.user_id).await?;
-
-    match user {
-        Some(user) => Ok((
-            StatusCode::OK,
-            Json(User {
-                id: user.id,
-                email: user.email,
-            }),
-        )),
-        None => Err(ApiError::NotFound),
-    }
+pub async fn get_user(claims: Claims) -> (StatusCode, Json<User>) {
+    (
+        StatusCode::OK,
+        Json(User {
+            email: claims.email,
+        }),
+    )
 }
 
 #[derive(Deserialize)]

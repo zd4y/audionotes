@@ -14,6 +14,7 @@ use crate::{api_error::ApiError, AppState};
 #[derive(Deserialize, Serialize)]
 pub struct Claims {
     pub user_id: i32,
+    pub email: String,
     pub exp: i64,
 }
 
