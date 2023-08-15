@@ -104,6 +104,15 @@ pub async fn password_reset(
     Extension(pool): Extension<PgPool>,
     Json(payload): Json<PasswordResetPayload>,
 ) -> crate::Result<StatusCode> {
+    if payload.new_password.is_empty() {
+        return Err(ApiError::BadRequest);
+    }
+    let entropy = zxcvbn::zxcvbn(&payload.new_password, &[])
+        .context("failed to check password with zxcvbn")?;
+    if entropy.score() <= 2 {
+        let feedback = entropy.feedback().clone().unwrap();
+        return Err(ApiError::WeakPassword(feedback));
+    }
     let db_tokens = database::get_user_tokens(&pool, payload.user_id).await?;
 
     let mut matched_token = None;

@@ -1,4 +1,10 @@
-use axum::{http::StatusCode, response::IntoResponse};
+use axum::{
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    Json,
+};
+use serde_json::json;
+use zxcvbn::feedback::Feedback;
 
 pub type Result<T> = std::result::Result<T, ApiError>;
 
@@ -8,10 +14,11 @@ pub enum ApiError {
     NotFound,
     Unauthorized,
     BadRequest,
+    WeakPassword(Feedback),
 }
 
 impl IntoResponse for ApiError {
-    fn into_response(self) -> axum::response::Response {
+    fn into_response(self) -> Response {
         let (status_code, msg) = match self {
             ApiError::InternalServerError => {
                 tracing::error!("sending error response: {:?}", self);
@@ -20,8 +27,23 @@ impl IntoResponse for ApiError {
             ApiError::NotFound => (StatusCode::NOT_FOUND, "Not found"),
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized"),
             ApiError::BadRequest => (StatusCode::BAD_REQUEST, "Bad request"),
+            ApiError::WeakPassword(feedback) => {
+                let suggestions = feedback
+                    .suggestions()
+                    .iter()
+                    .map(|suggestion| suggestion.to_string())
+                    .collect::<Vec<_>>();
+                let warning = feedback.warning().map(|warning| warning.to_string());
+                let body = Json(json!({
+                    "error": "Weak password",
+                    "suggestions": suggestions,
+                    "warning": warning
+                }));
+                return (StatusCode::BAD_REQUEST, body).into_response();
+            }
         };
-        (status_code, msg).into_response()
+        let body = Json(json!({ "error": msg }));
+        (status_code, body).into_response()
     }
 }
 
