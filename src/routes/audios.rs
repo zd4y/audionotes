@@ -84,6 +84,7 @@ pub async fn new_audio(
     body: BodyStream,
 ) -> crate::Result<StatusCode> {
     let id = database::insert_audio_by(&pool, claims.user_id).await?;
+    // TODO: use file's sha256 as path
     let path = id.to_string();
     match stream_to_file(&path, body).await {
         Ok(()) => Ok(StatusCode::CREATED),
