@@ -9,7 +9,7 @@ use axum::{
 use jsonwebtoken::{decode, Validation};
 use serde::{Deserialize, Serialize};
 
-use crate::{api_error::ApiError, AppState};
+use crate::{ApiError, AppState};
 
 #[derive(Deserialize, Serialize)]
 pub struct Claims {

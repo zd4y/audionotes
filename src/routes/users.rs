@@ -15,7 +15,7 @@ use ring::rand::SecureRandom;
 use serde::{Deserialize, Serialize};
 use shuttle_secrets::SecretStore;
 
-use crate::{api_error::ApiError, database, models::User, AppState, Claims};
+use crate::{database, models::User, ApiError, AppState, Claims};
 
 const TOKEN_BYTES: usize = 48;
 

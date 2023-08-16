@@ -3,11 +3,14 @@ mod claims;
 mod database;
 mod models;
 mod routes;
+mod whisper;
 
 use std::{ops::Deref, sync::Arc};
 
-pub use api_error::Result;
+pub use api_error::{ApiError, Result};
 pub use claims::Claims;
+pub use whisper::Whisper;
+use whisper::WhisperMock;
 
 use anyhow::Context;
 use axum::{
@@ -47,11 +50,12 @@ async fn axum(
         decoding: DecodingKey::from_secret(secret),
     };
 
-    let app_state = AppState(Arc::new(AppStateInner {
+    let app_state = AppStateW(Arc::new(AppStateInner {
         pool: pool.clone(),
         secret_store,
         rand_rng,
         keys,
+        whisper: WhisperMock,
     }));
 
     let audio_routes = Router::new()
@@ -76,18 +80,24 @@ async fn axum(
     Ok(app.into())
 }
 
-#[derive(Clone)]
-pub struct AppState(Arc<AppStateInner>);
+pub type AppState = AppStateW<WhisperMock>;
 
-pub struct AppStateInner {
+#[derive(Clone)]
+pub struct AppStateW<W: Whisper>(Arc<AppStateInner<W>>);
+
+pub struct AppStateInner<W>
+where
+    W: Whisper,
+{
     pool: PgPool,
     secret_store: SecretStore,
     rand_rng: SystemRandom,
     keys: Keys,
+    whisper: W,
 }
 
 impl Deref for AppState {
-    type Target = AppStateInner;
+    type Target = AppStateInner<WhisperMock>;
 
     fn deref(&self) -> &Self::Target {
         &self.0

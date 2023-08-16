@@ -45,3 +45,16 @@ pub async fn delete_audio(pool: &PgPool, audio_id: i32) -> sqlx::Result<()> {
         .await?;
     Ok(())
 }
+
+pub async fn update_audio_transcription(
+    pool: &PgPool,
+    audio_id: i32,
+    new_transcription: &str,
+) -> sqlx::Result<()> {
+    sqlx::query("update audios set transcription = $1 where id = $2")
+        .bind(new_transcription)
+        .bind(audio_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}

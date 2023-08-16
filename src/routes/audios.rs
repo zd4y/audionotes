@@ -12,7 +12,7 @@ use sqlx::PgPool;
 use tokio::{fs::File, io::BufWriter};
 use tokio_util::io::{ReaderStream, StreamReader};
 
-use crate::{api_error::ApiError, database, models::Audio, Claims};
+use crate::{database, models::Audio, ApiError, AppState, Claims, Whisper};
 
 const MAX_BYTES_TO_SAVE: usize = 25 * 1_000_000;
 
@@ -79,20 +79,37 @@ pub async fn all_audios(
 }
 
 pub async fn new_audio(
-    Extension(pool): Extension<PgPool>,
+    Extension(state): Extension<AppState>,
     claims: Claims,
     body: BodyStream,
 ) -> crate::Result<StatusCode> {
-    let id = database::insert_audio_by(&pool, claims.user_id).await?;
+    let id = database::insert_audio_by(&state.pool, claims.user_id).await?;
     // TODO: use file's sha256 as path
     let path = id.to_string();
     match stream_to_file(&path, body).await {
-        Ok(()) => Ok(StatusCode::CREATED),
+        Ok(()) => {}
         Err(err) => {
-            database::delete_audio(&pool, id).await?;
-            Err(err)
+            database::delete_audio(&state.pool, id).await?;
+            return Err(err);
         }
-    }
+    };
+
+    tokio::spawn(async move {
+        match state.whisper.transcribe(&path).await {
+            Ok(transcription) => {
+                if let Err(err) =
+                    database::update_audio_transcription(&state.pool, id, &transcription).await
+                {
+                    tracing::error!("failed to update audio transcription: {}", err);
+                }
+            }
+            Err(err) => {
+                tracing::error!("failed to transcribe audio with id {}: {}", id, err);
+            }
+        }
+    });
+
+    Ok(StatusCode::CREATED)
 }
 
 // Save a `Stream` to a file
