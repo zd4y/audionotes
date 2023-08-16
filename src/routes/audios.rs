@@ -14,6 +14,8 @@ use tokio_util::io::{ReaderStream, StreamReader};
 
 use crate::{api_error::ApiError, database, models::Audio, Claims};
 
+const MAX_BYTES_TO_SAVE: u64 = 25 * 1_000_000;
+
 pub async fn get_audio(
     Extension(pool): Extension<PgPool>,
     claims: Claims,
@@ -35,9 +37,7 @@ pub async fn get_audio_file(
     claims: Claims,
     Path(audio_id): Path<i32>,
 ) -> crate::Result<StreamBody<ReaderStream<tokio::fs::File>>> {
-    let audio = database::get_audio_by(&pool, audio_id, claims.user_id).await?;
-
-    let audio = match audio {
+    let audio = match database::get_audio_by(&pool, audio_id, claims.user_id).await? {
         Some(audio) => audio,
         None => return Err(ApiError::NotFound),
     };
@@ -83,18 +83,25 @@ pub async fn new_audio(
     claims: Claims,
     body: BodyStream,
 ) -> crate::Result<StatusCode> {
-    let id = database::new_audio_by(&pool, claims.user_id).await?;
+    let id = database::insert_audio_by(&pool, claims.user_id).await?;
     let path = id.to_string();
-    stream_to_file(&path, body).await?;
-    Ok(StatusCode::CREATED)
+    match stream_to_file(&path, body).await {
+        Ok(()) => Ok(StatusCode::CREATED),
+        Err(err) => {
+            database::delete_audio(&pool, id).await?;
+            Err(err)
+        }
+    }
 }
 
 // Save a `Stream` to a file
-async fn stream_to_file<S, E>(path: &str, stream: S) -> crate::Result<()>
+async fn stream_to_file<S, E>(file_path: &str, stream: S) -> crate::Result<()>
 where
     S: Stream<Item = Result<Bytes, E>>,
     E: Into<BoxError>,
 {
+    let mut bytes_copied = 0;
+    let mut path = Default::default();
     async {
         // Convert the stream into an `AsyncRead`.
         let body_with_io_error = stream.map_err(|err| io::Error::new(io::ErrorKind::Other, err));
@@ -102,15 +109,23 @@ where
         futures::pin_mut!(body_reader);
 
         // Create the file. `File` implements `AsyncWrite`.
-        let path = std::path::Path::new(crate::UPLOADS_DIRECTORY).join(path);
-        let mut file = BufWriter::new(File::create(path).await?);
+        path = std::path::Path::new(crate::UPLOADS_DIRECTORY).join(file_path);
+        let mut file = BufWriter::new(File::create(&path).await?);
 
         // Copy the body into the file.
-        tokio::io::copy(&mut body_reader, &mut file).await?;
+        bytes_copied = tokio::io::copy(&mut body_reader, &mut file).await?;
 
         Ok::<_, io::Error>(())
     }
     .await
     .context("failed to save file")?;
+
+    if bytes_copied > MAX_BYTES_TO_SAVE {
+        tokio::fs::remove_file(path)
+            .await
+            .context("failed to delete file")?;
+        return Err(ApiError::ExceededFileSizeLimit);
+    }
+
     Ok(())
 }

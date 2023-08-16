@@ -30,10 +30,18 @@ pub async fn get_audios_by(pool: &PgPool, user_id: i32) -> sqlx::Result<Vec<DbAu
         .await
 }
 
-pub async fn new_audio_by(pool: &PgPool, user_id: i32) -> sqlx::Result<i32> {
+pub async fn insert_audio_by(pool: &PgPool, user_id: i32) -> sqlx::Result<i32> {
     let id: (i32,) = sqlx::query_as("insert into audios(user_id) values ($1) returning id")
         .bind(user_id)
         .fetch_one(pool)
         .await?;
     Ok(id.0)
+}
+
+pub async fn delete_audio(pool: &PgPool, audio_id: i32) -> sqlx::Result<()> {
+    sqlx::query("delete from audios where id = $1")
+        .bind(audio_id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }

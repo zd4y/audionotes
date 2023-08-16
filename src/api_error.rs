@@ -15,6 +15,7 @@ pub enum ApiError {
     Unauthorized,
     BadRequest,
     WeakPassword(Feedback),
+    ExceededFileSizeLimit,
 }
 
 impl IntoResponse for ApiError {
@@ -40,6 +41,9 @@ impl IntoResponse for ApiError {
                     "warning": warning
                 }));
                 return (StatusCode::BAD_REQUEST, body).into_response();
+            }
+            ApiError::ExceededFileSizeLimit => {
+                (StatusCode::BAD_REQUEST, "Exceeded file size limit")
             }
         };
         let body = Json(json!({ "error": msg }));
