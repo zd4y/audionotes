@@ -1,4 +1,4 @@
-use std::io;
+use std::{io, pin::Pin, task::Poll};
 
 use anyhow::Context;
 use axum::{
@@ -14,7 +14,7 @@ use tokio_util::io::{ReaderStream, StreamReader};
 
 use crate::{api_error::ApiError, database, models::Audio, Claims};
 
-const MAX_BYTES_TO_SAVE: u64 = 25 * 1_000_000;
+const MAX_BYTES_TO_SAVE: usize = 25 * 1_000_000;
 
 pub async fn get_audio(
     Extension(pool): Extension<PgPool>,
@@ -104,7 +104,10 @@ where
     let mut path = Default::default();
     async {
         // Convert the stream into an `AsyncRead`.
-        let body_with_io_error = stream.map_err(|err| io::Error::new(io::ErrorKind::Other, err));
+        futures::pin_mut!(stream);
+        let body_with_io_error = stream
+            .take_bytes(MAX_BYTES_TO_SAVE + 1)
+            .map_err(|err| io::Error::new(io::ErrorKind::Other, err));
         let body_reader = StreamReader::new(body_with_io_error);
         futures::pin_mut!(body_reader);
 
@@ -120,7 +123,11 @@ where
     .await
     .context("failed to save file")?;
 
-    if bytes_copied > MAX_BYTES_TO_SAVE {
+    if bytes_copied
+        > MAX_BYTES_TO_SAVE
+            .try_into()
+            .context("failed to convert MAX_BYTES_TO_SAVE to u64")?
+    {
         tokio::fs::remove_file(path)
             .await
             .context("failed to delete file")?;
@@ -128,4 +135,53 @@ where
     }
 
     Ok(())
+}
+
+struct TakeBytes<S> {
+    inner: S,
+    seen: usize,
+    limit: usize,
+}
+
+impl<S, E> Stream for TakeBytes<Pin<&mut S>>
+where
+    S: Stream<Item = Result<Bytes, E>>,
+    E: Into<BoxError>,
+{
+    type Item = Result<Bytes, E>;
+
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> Poll<Option<Self::Item>> {
+        if self.seen >= self.limit {
+            return Poll::Ready(None); // Stream is over
+        }
+
+        let self_mut = self.get_mut();
+        let inner = self_mut.inner.as_mut().poll_next(cx);
+        if let Poll::Ready(Some(ref v)) = inner {
+            let seen = v.as_ref().map(|b| b.len()).unwrap_or_default();
+            self_mut.seen += seen;
+        }
+        inner
+    }
+}
+
+trait TakeBytesExt: Sized {
+    fn take_bytes(self, limit: usize) -> TakeBytes<Self>;
+}
+
+impl<S, E> TakeBytesExt for Pin<&mut S>
+where
+    S: Stream<Item = Result<Bytes, E>>,
+    E: Into<BoxError>,
+{
+    fn take_bytes(self, limit: usize) -> TakeBytes<Self> {
+        TakeBytes {
+            inner: self,
+            limit,
+            seen: 0,
+        }
+    }
 }
