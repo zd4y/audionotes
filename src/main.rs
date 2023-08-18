@@ -15,7 +15,10 @@ use whisper::WhisperMock;
 
 use anyhow::Context;
 use axum::{
-    http::{header::CONTENT_TYPE, HeaderValue, Method},
+    http::{
+        header::{AUTHORIZATION, CONTENT_TYPE},
+        HeaderValue, Method,
+    },
     routing::{get, post, put},
     Extension, Router,
 };
@@ -80,7 +83,7 @@ async fn axum(
     let app = Router::new().nest("/api", api_routes).layer(
         CorsLayer::new()
             .allow_origin("http://localhost:3000".parse::<HeaderValue>().unwrap())
-            .allow_headers([CONTENT_TYPE])
+            .allow_headers([CONTENT_TYPE, AUTHORIZATION])
             .allow_methods([Method::GET, Method::POST, Method::PUT]),
     );
 
