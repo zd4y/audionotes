@@ -135,7 +135,6 @@ dependencies = [
  "chrono",
  "data-encoding",
  "futures",
- "headers",
  "jsonwebtoken",
  "lettre",
  "once_cell",
@@ -149,6 +148,7 @@ dependencies = [
  "sqlx",
  "tokio",
  "tokio-util",
+ "tower-http",
  "tracing",
  "zxcvbn",
 ]

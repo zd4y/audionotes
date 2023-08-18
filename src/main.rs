@@ -9,11 +9,13 @@ use std::{ops::Deref, sync::Arc};
 
 pub use api_error::{ApiError, Result};
 pub use claims::Claims;
+use tower_http::cors::CorsLayer;
 pub use whisper::Whisper;
 use whisper::WhisperMock;
 
 use anyhow::Context;
 use axum::{
+    http::{HeaderValue, Method},
     routing::{get, post, put},
     Extension, Router,
 };
@@ -75,7 +77,11 @@ async fn axum(
         .layer(Extension(app_state))
         .layer(Extension(pool));
 
-    let app = Router::new().nest("/api", api_routes);
+    let app = Router::new().nest("/api", api_routes).layer(
+        CorsLayer::new()
+            .allow_origin("http://localhost:3000".parse::<HeaderValue>().unwrap())
+            .allow_methods([Method::GET, Method::POST, Method::PUT]),
+    );
 
     Ok(app.into())
 }
