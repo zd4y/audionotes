@@ -60,7 +60,7 @@ impl From<sqlx::Error> for ApiError {
 
 impl From<anyhow::Error> for ApiError {
     fn from(error: anyhow::Error) -> Self {
-        tracing::error!("anyhow error: {}", error);
+        tracing::error!("anyhow error: {:#}", error);
         ApiError::InternalServerError
     }
 }
