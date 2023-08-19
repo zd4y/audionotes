@@ -172,17 +172,11 @@ pub async fn request_password_reset(
         StatusCode::ACCEPTED,
         "If that email address is in our database, we will send you an email to reset your password."
     ));
-    let user = match database::find_user_by_email(&state.pool, &payload.email).await? {
-        Some(user) => user,
-        None => return response,
-    };
 
     let token = generate_token(&state.rand_rng)?;
     let token_hash = hash(&token)?;
-    database::insert_token(&state.pool, user.id, token_hash).await?;
 
     let link = state.secret_store.get("password_reset_link").unwrap();
-
     let email_body = format!(
         r#"
 Follow this link for resetting your password: {}?token={}&user_id={}
@@ -190,6 +184,13 @@ Follow this link for resetting your password: {}?token={}&user_id={}
 If you didn't initialize any password reset, you can safely ignore this message."#,
         link, token, user.id
     );
+
+    let user = match database::find_user_by_email(&state.pool, &payload.email).await? {
+        Some(user) => user,
+        None => return response,
+    };
+
+    database::insert_token(&state.pool, user.id, token_hash).await?;
 
     tokio::spawn(async move {
         let subject = "Password reset link";
