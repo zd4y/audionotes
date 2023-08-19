@@ -9,7 +9,7 @@ use std::{ops::Deref, sync::Arc};
 
 pub use api_error::{ApiError, Result};
 pub use claims::Claims;
-use tower_http::cors::CorsLayer;
+use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer};
 pub use whisper::Whisper;
 use whisper::WhisperMock;
 
@@ -30,6 +30,7 @@ use sqlx::PgPool;
 use routes::{audios::*, users::*};
 
 const UPLOADS_DIRECTORY: &str = "uploads";
+const MAX_BYTES_TO_SAVE: usize = 25 * 1_000_000;
 
 #[shuttle_runtime::main]
 async fn axum(
@@ -80,7 +81,8 @@ async fn axum(
         .nest("/user", user_routes)
         .nest("/audios", audio_routes)
         .layer(Extension(app_state))
-        .layer(Extension(pool));
+        .layer(Extension(pool))
+        .layer(RequestBodyLimitLayer::new(MAX_BYTES_TO_SAVE));
 
     let app = Router::new().nest("/api", api_routes).layer(
         CorsLayer::new()

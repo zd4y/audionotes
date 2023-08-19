@@ -38,14 +38,6 @@ pub async fn insert_audio_by(pool: &PgPool, user_id: i32) -> sqlx::Result<i32> {
     Ok(id.0)
 }
 
-pub async fn delete_audio(pool: &PgPool, audio_id: i32) -> sqlx::Result<()> {
-    sqlx::query("delete from audios where id = $1")
-        .bind(audio_id)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
 pub async fn update_audio_transcription(
     pool: &PgPool,
     audio_id: i32,
