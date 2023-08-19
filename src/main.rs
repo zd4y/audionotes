@@ -55,6 +55,8 @@ async fn axum(
         decoding: DecodingKey::from_secret(secret),
     };
 
+    let allowed_origin = secret_store.get("allowed_origin").unwrap();
+
     let app_state = AppStateW(Arc::new(AppStateInner {
         pool: pool.clone(),
         secret_store,
@@ -82,7 +84,7 @@ async fn axum(
 
     let app = Router::new().nest("/api", api_routes).layer(
         CorsLayer::new()
-            .allow_origin("http://localhost:3000".parse::<HeaderValue>().unwrap())
+            .allow_origin(allowed_origin.parse::<HeaderValue>().unwrap())
             .allow_headers([CONTENT_TYPE, AUTHORIZATION])
             .allow_methods([Method::GET, Method::POST, Method::PUT]),
     );
