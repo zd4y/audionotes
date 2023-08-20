@@ -9,6 +9,7 @@ pub struct User {
 #[derive(Serialize)]
 pub struct Audio {
     pub id: i32,
+    pub length: i32,
     pub transcription: Option<String>,
     pub created_at: DateTime<Utc>,
 }
