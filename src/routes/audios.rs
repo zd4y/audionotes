@@ -19,17 +19,15 @@ pub async fn get_audio(
     claims: Claims,
     Path(audio_id): Path<i32>,
 ) -> crate::Result<Json<Audio>> {
-    let audio = match database::get_audio_by(&pool, audio_id, claims.user_id).await? {
-        Some(audio) if audio.user_id == claims.user_id => audio,
-        _ => return Err(ApiError::NotFound),
-    };
-
-    Ok(Json(Audio {
-        id: audio.id,
-        length: audio.length,
-        transcription: audio.transcription,
-        created_at: audio.created_at,
-    }))
+    let audio = database::get_audio_by(&pool, audio_id, claims.user_id).await?;
+    match audio {
+        Some(audio) if audio.user_id == claims.user_id => Ok(Json(Audio {
+            id: audio.id,
+            transcription: audio.transcription,
+            created_at: audio.created_at,
+        })),
+        None | Some(_) => Err(ApiError::NotFound),
+    }
 }
 
 pub async fn get_audio_file(
@@ -71,7 +69,6 @@ pub async fn all_audios(
         .into_iter()
         .map(|audio| Audio {
             id: audio.id,
-            length: audio.length,
             transcription: audio.transcription,
             created_at: audio.created_at,
         })
@@ -84,8 +81,7 @@ pub async fn new_audio(
     claims: Claims,
     body: BodyStream,
 ) -> crate::Result<StatusCode> {
-    let length = 30;
-    let id = database::insert_audio_by(&state.pool, claims.user_id, length).await?;
+    let id = database::insert_audio_by(&state.pool, claims.user_id).await?;
     // TODO: use file's sha256 as path
     let path = id.to_string();
     stream_to_file(&path, body).await?;

@@ -4,7 +4,6 @@ use sqlx::{FromRow, PgPool};
 #[derive(FromRow)]
 pub struct DbAudio {
     pub id: i32,
-    pub length: i32,
     pub transcription: Option<String>,
     pub created_at: DateTime<Utc>,
     pub user_id: i32,
@@ -16,7 +15,7 @@ pub async fn get_audio_by(
     user_id: i32,
 ) -> sqlx::Result<Option<DbAudio>> {
     sqlx::query_as(
-        "select id, length, transcription, created_at, user_id from audios where id = $1 and user_id = $2",
+        "select id, transcription, created_at, user_id from audios where id = $1 and user_id = $2",
     )
     .bind(audio_id)
     .bind(user_id)
@@ -25,21 +24,17 @@ pub async fn get_audio_by(
 }
 
 pub async fn get_audios_by(pool: &PgPool, user_id: i32) -> sqlx::Result<Vec<DbAudio>> {
-    sqlx::query_as(
-        "select id, length, transcription, created_at, user_id from audios where user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await
+    sqlx::query_as("select id, transcription, created_at, user_id from audios where user_id = $1")
+        .bind(user_id)
+        .fetch_all(pool)
+        .await
 }
 
-pub async fn insert_audio_by(pool: &PgPool, user_id: i32, length: i32) -> sqlx::Result<i32> {
-    let id: (i32,) =
-        sqlx::query_as("insert into audios (user_id, length) values ($1, $2) returning id")
-            .bind(user_id)
-            .bind(length)
-            .fetch_one(pool)
-            .await?;
+pub async fn insert_audio_by(pool: &PgPool, user_id: i32) -> sqlx::Result<i32> {
+    let id: (i32,) = sqlx::query_as("insert into audios(user_id) values ($1) returning id")
+        .bind(user_id)
+        .fetch_one(pool)
+        .await?;
     Ok(id.0)
 }
 
