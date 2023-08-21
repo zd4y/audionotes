@@ -78,7 +78,7 @@ async fn axum(
         .route("/request-reset-password", put(request_password_reset));
 
     let api_routes = Router::new()
-        .route("/", get(ping))
+        .route("/ping", get(ping))
         .nest("/user", user_routes)
         .nest("/audios", audio_routes)
         .layer(Extension(app_state))
