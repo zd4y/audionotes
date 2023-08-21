@@ -27,7 +27,7 @@ use ring::rand::SystemRandom;
 use shuttle_secrets::SecretStore;
 use sqlx::PgPool;
 
-use routes::{audios::*, users::*};
+use routes::{audios::*, ping, users::*};
 
 const UPLOADS_DIRECTORY: &str = "uploads";
 const MAX_BYTES_TO_SAVE: usize = 25 * 1_000_000;
@@ -78,6 +78,7 @@ async fn axum(
         .route("/request-reset-password", put(request_password_reset));
 
     let api_routes = Router::new()
+        .route("/", get(ping))
         .nest("/user", user_routes)
         .nest("/audios", audio_routes)
         .layer(Extension(app_state))
