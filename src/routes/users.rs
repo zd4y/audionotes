@@ -41,7 +41,7 @@ pub async fn authorize(
 
     let user = match database::find_user_by_email(&state.pool, &payload.email).await? {
         Some(user) => user,
-        None => return Err(ApiError::NotFound),
+        None => return Err(ApiError::Unauthorized),
     };
 
     let password_hash = match user.password {
