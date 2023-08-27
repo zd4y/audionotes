@@ -12,7 +12,11 @@ use sqlx::PgPool;
 use tokio::{fs::File, io::BufWriter};
 use tokio_util::io::{ReaderStream, StreamReader};
 
-use crate::{database, models::Audio, ApiError, AppState, Claims, Whisper};
+use crate::{
+    database,
+    models::{Audio, Tag},
+    ApiError, AppState, Claims, Whisper,
+};
 
 pub async fn get_audio(
     Extension(pool): Extension<PgPool>,
@@ -20,11 +24,17 @@ pub async fn get_audio(
     Path(audio_id): Path<i32>,
 ) -> crate::Result<Json<Audio>> {
     let audio = database::get_audio_by(&pool, audio_id, claims.user_id).await?;
+    let audio_tags = database::get_audio_tags(&pool, audio_id)
+        .await?
+        .into_iter()
+        .map(Tag::from)
+        .collect();
     match audio {
         Some(audio) if audio.user_id == claims.user_id => Ok(Json(Audio {
             id: audio.id,
             transcription: audio.transcription,
             created_at: audio.created_at,
+            tags: audio_tags,
         })),
         None | Some(_) => Err(ApiError::NotFound),
     }
@@ -71,6 +81,7 @@ pub async fn all_audios(
             id: audio.id,
             transcription: audio.transcription,
             created_at: audio.created_at,
+            tags: vec![], // TODO: fix this
         })
         .collect();
     Ok((StatusCode::OK, Json(audios)))
