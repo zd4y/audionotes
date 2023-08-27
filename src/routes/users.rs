@@ -59,7 +59,7 @@ pub async fn authorize(
         return Err(ApiError::Unauthorized);
     };
 
-    let expiration_date = Utc::now() + Duration::days(30);
+    let expiration_date = Utc::now() + Duration::days(180);
     let claims = Claims {
         user_id: user.id,
         email: user.email,
