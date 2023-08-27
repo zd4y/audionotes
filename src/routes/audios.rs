@@ -109,6 +109,11 @@ pub async fn tag_audio(
     claims: Claims,
     Json(payload): Json<TagAudioPayload>,
 ) -> crate::Result<StatusCode> {
+    let audio = database::get_audio_by(&pool, audio_id, claims.user_id).await?;
+    match audio {
+        Some(a) if a.user_id == claims.user_id => {}
+        _ => return Err(ApiError::NotFound),
+    }
     let db_tag =
         database::get_or_create_tag(&pool, claims.user_id, &payload.name, payload.color).await?;
     database::tag_audio(&pool, db_tag.id, audio_id).await?;
