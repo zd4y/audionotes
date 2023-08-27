@@ -75,13 +75,22 @@ pub async fn all_audios(
     claims: Claims,
 ) -> crate::Result<(StatusCode, Json<Vec<Audio>>)> {
     let audios = database::get_audios_by(&pool, claims.user_id).await?;
+    let mut audios_tags = database::get_audios_tags(&pool, claims.user_id).await?;
     let audios = audios
         .into_iter()
-        .map(|audio| Audio {
-            id: audio.id,
-            transcription: audio.transcription,
-            created_at: audio.created_at,
-            tags: vec![], // TODO: fix this
+        .map(|audio| {
+            let tags = audios_tags
+                .remove(&audio.id)
+                .unwrap_or_default()
+                .into_iter()
+                .map(Tag::from)
+                .collect();
+            Audio {
+                id: audio.id,
+                transcription: audio.transcription,
+                created_at: audio.created_at,
+                tags,
+            }
         })
         .collect();
     Ok((StatusCode::OK, Json(audios)))
