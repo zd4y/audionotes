@@ -63,7 +63,7 @@ pub async fn get_or_create_tag(
     let query = format!(
         "insert into tags (user_id, name{})
          values ($1, $2{})
-         on conflict (id) do update
+         on conflict (user_id, name) do update
             set name = EXCLUDED.name{}
          returning id, user_id, name, color",
         if color_is_some { ", color" } else { "" },
