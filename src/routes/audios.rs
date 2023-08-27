@@ -81,7 +81,10 @@ pub async fn delete_audio(
     Path(audio_id): Path<i32>,
     claims: Claims,
 ) -> crate::Result<StatusCode> {
-    database::delete_audio(&pool, claims.user_id, audio_id).await?;
+    let deleted = database::delete_audio(&pool, claims.user_id, audio_id).await?;
+    if !deleted {
+        return Err(ApiError::NotFound);
+    }
     tokio::fs::remove_file(get_audio_file_path(audio_id))
         .await
         .context("failed to remove audio file")?;

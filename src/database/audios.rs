@@ -51,11 +51,11 @@ pub async fn update_audio_transcription(
     Ok(())
 }
 
-pub async fn delete_audio(pool: &PgPool, user_id: i32, audio_id: i32) -> sqlx::Result<()> {
-    sqlx::query("delete from audios where user_id = $1 and id = $2")
+pub async fn delete_audio(pool: &PgPool, user_id: i32, audio_id: i32) -> sqlx::Result<bool> {
+    let result = sqlx::query("delete from audios where user_id = $1 and id = $2")
         .bind(user_id)
         .bind(audio_id)
         .execute(pool)
         .await?;
-    Ok(())
+    Ok(result.rows_affected() == 1)
 }
