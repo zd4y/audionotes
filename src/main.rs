@@ -90,7 +90,7 @@ async fn axum(
         CorsLayer::new()
             .allow_origin(allowed_origin.parse::<HeaderValue>().unwrap())
             .allow_headers([CONTENT_TYPE, AUTHORIZATION])
-            .allow_methods([Method::GET, Method::POST, Method::PUT]),
+            .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE]),
     );
 
     Ok(app.into())
