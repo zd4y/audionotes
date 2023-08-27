@@ -37,6 +37,6 @@ create table audio_tags (
         audio_id int not null,
 
         primary key (tag_id, audio_id),
-        foreign key (tag_id) references tags (id),
-        foreign key (audio_id) references audios (id)
+        foreign key (tag_id) references tags (id) on delete cascade,
+        foreign key (audio_id) references audios (id) on delete cascade
 )
