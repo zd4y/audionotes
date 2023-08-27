@@ -28,7 +28,8 @@ create table tags (
         name varchar(25) not null,
         color varchar(7) not null default '#ffffff',
 
-        foreign key (user_id) references users (id)
+        foreign key (user_id) references users (id),
+        unique (user_id, name)
 );
 
 create table audio_tags (
