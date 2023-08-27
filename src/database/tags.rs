@@ -86,7 +86,7 @@ pub async fn get_or_create_tag(
 }
 
 pub async fn tag_audio(pool: &PgPool, tag_id: i32, audio_id: i32) -> sqlx::Result<()> {
-    sqlx::query("insert into audio_tags (tag_id, audio_id) values ($1, $2)")
+    sqlx::query("insert into audio_tags (tag_id, audio_id) values ($1, $2) on conflict (tag_id, audio_id) do nothing")
         .bind(tag_id)
         .bind(audio_id)
         .execute(pool)
