@@ -8,6 +8,7 @@ use axum::{
     BoxError, Extension, Json,
 };
 use futures::{Stream, TryStreamExt};
+use serde::Deserialize;
 use sqlx::PgPool;
 use tokio::{fs::File, io::BufWriter};
 use tokio_util::io::{ReaderStream, StreamReader};
@@ -94,6 +95,24 @@ pub async fn all_audios(
         })
         .collect();
     Ok((StatusCode::OK, Json(audios)))
+}
+
+#[derive(Deserialize)]
+pub struct TagAudioPayload {
+    name: String,
+    color: Option<String>,
+}
+
+pub async fn tag_audio(
+    Extension(pool): Extension<PgPool>,
+    Path(audio_id): Path<i32>,
+    claims: Claims,
+    Json(payload): Json<TagAudioPayload>,
+) -> crate::Result<StatusCode> {
+    let db_tag =
+        database::get_or_create_tag(&pool, claims.user_id, &payload.name, payload.color).await?;
+    database::tag_audio(&pool, db_tag.id, audio_id).await?;
+    Ok(StatusCode::OK)
 }
 
 pub async fn delete_audio(

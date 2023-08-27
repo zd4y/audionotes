@@ -4,6 +4,7 @@ use sqlx::{FromRow, PgPool};
 
 #[derive(FromRow)]
 pub struct DbTag {
+    pub id: i32,
     pub user_id: i32,
     pub name: String,
     pub color: String,
@@ -11,7 +12,7 @@ pub struct DbTag {
 
 pub async fn get_audio_tags(pool: &PgPool, audio_id: i32) -> sqlx::Result<Vec<DbTag>> {
     sqlx::query_as(
-        "select t.user_id, t.name, t.color
+        "select t.id, t.user_id, t.name, t.color
             from tags t
          join audio_tags a
             on t.id = a.tag_id
@@ -26,8 +27,8 @@ pub async fn get_audios_tags(
     pool: &PgPool,
     user_id: i32,
 ) -> sqlx::Result<HashMap<i32, Vec<DbTag>>> {
-    let rows: Vec<(i32, String, String, i32)> = sqlx::query_as(
-        "select t.user_id, t.name, t.color, a.audio_id
+    let rows: Vec<(i32, i32, String, String, i32)> = sqlx::query_as(
+        "select t.id, t.user_id, t.name, t.color, a.audio_id
             from tags t
          join audio_tags a
             on t.id = a.tag_id
@@ -40,13 +41,48 @@ pub async fn get_audios_tags(
     let mut tags: HashMap<i32, Vec<DbTag>> = HashMap::new();
 
     for row in rows {
-        let v = tags.entry(row.3).or_default();
+        let v = tags.entry(row.4).or_default();
         v.push(DbTag {
-            user_id: row.0,
-            name: row.1,
-            color: row.2,
+            id: row.0,
+            user_id: row.1,
+            name: row.2,
+            color: row.3,
         })
     }
 
     Ok(tags)
+}
+
+pub async fn get_or_create_tag(
+    pool: &PgPool,
+    user_id: i32,
+    tag_name: &str,
+    tag_color: Option<String>,
+) -> sqlx::Result<DbTag> {
+    let query = format!(
+        "insert into tags (user_id, name{})
+         values ($1, $2{})
+         returning id, user_id, name, color
+         on conflict do update",
+        if tag_color.is_some() { ", color" } else { "" },
+        if tag_color.is_some() { ", $3" } else { "" }
+    );
+    let query = sqlx::query_as(&query).bind(user_id).bind(tag_name);
+
+    if let Some(color) = tag_color {
+        query.bind(color)
+    } else {
+        query
+    }
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn tag_audio(pool: &PgPool, tag_id: i32, audio_id: i32) -> sqlx::Result<()> {
+    sqlx::query("insert into audio_tags (tag_id, audio_id) values ($1, $2)")
+        .bind(tag_id)
+        .bind(audio_id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }

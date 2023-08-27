@@ -70,7 +70,8 @@ async fn axum(
         .route("/", get(all_audios).post(new_audio))
         .route("/:audio_id", get(get_audio))
         .route("/:audio_id/file", get(get_audio_file))
-        .route("/:audio_id", delete(delete_audio));
+        .route("/:audio_id", delete(delete_audio))
+        .route("/:audio_id/tags", put(tag_audio));
 
     let user_routes = Router::new()
         .route("/", get(get_user))
