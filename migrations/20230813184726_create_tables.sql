@@ -26,7 +26,7 @@ create table tags (
         id serial primary key,
         user_id int not null,
         name varchar(25) not null,
-        color varchar(7) not null default '#ffffff',
+        color varchar(7),
 
         foreign key (user_id) references users (id),
         unique (user_id, name)

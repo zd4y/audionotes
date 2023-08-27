@@ -17,7 +17,7 @@ pub struct Audio {
 #[derive(Serialize)]
 pub struct Tag {
     pub name: String,
-    pub color: String,
+    pub color: Option<String>,
 }
 
 impl From<crate::database::DbTag> for Tag {

@@ -7,7 +7,7 @@ pub struct DbTag {
     pub id: i32,
     pub user_id: i32,
     pub name: String,
-    pub color: String,
+    pub color: Option<String>,
 }
 
 pub async fn get_audio_tags(pool: &PgPool, audio_id: i32) -> sqlx::Result<Vec<DbTag>> {
@@ -27,7 +27,7 @@ pub async fn get_audios_tags(
     pool: &PgPool,
     user_id: i32,
 ) -> sqlx::Result<HashMap<i32, Vec<DbTag>>> {
-    let rows: Vec<(i32, i32, String, String, i32)> = sqlx::query_as(
+    let rows: Vec<(i32, i32, String, Option<String>, i32)> = sqlx::query_as(
         "select t.id, t.user_id, t.name, t.color, a.audio_id
             from tags t
          join audio_tags a
