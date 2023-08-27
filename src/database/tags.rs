@@ -59,13 +59,20 @@ pub async fn get_or_create_tag(
     tag_name: &str,
     tag_color: Option<String>,
 ) -> sqlx::Result<DbTag> {
+    let color_is_some = tag_color.is_some();
     let query = format!(
         "insert into tags (user_id, name{})
          values ($1, $2{})
-         returning id, user_id, name, color
-         on conflict do update",
-        if tag_color.is_some() { ", color" } else { "" },
-        if tag_color.is_some() { ", $3" } else { "" }
+         on conflict (id) do update
+            set name = EXCLUDED.name{}
+         returning id, user_id, name, color",
+        if color_is_some { ", color" } else { "" },
+        if color_is_some { ", $3" } else { "" },
+        if color_is_some {
+            ", color = EXCLUDED.color"
+        } else {
+            ""
+        }
     );
     let query = sqlx::query_as(&query).bind(user_id).bind(tag_name);
 
