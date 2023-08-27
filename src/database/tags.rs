@@ -12,7 +12,7 @@ pub async fn get_audio_tags(pool: &PgPool, audio_id: i32) -> sqlx::Result<Vec<Db
         "select t.user_id, t.name, t.color
             from tags t
          join audio_tags a
-            on t.user_id = a.tag_user_id and t.name = a.tag_name
+            on t.id = a.tag_id
          where a.audio_id = $1",
     )
     .bind(audio_id)

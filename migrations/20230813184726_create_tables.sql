@@ -23,20 +23,19 @@ create table password_reset_tokens (
 );
 
 create table tags (
+        id serial primary key,
         user_id int not null,
         name varchar(25) not null,
         color varchar(7) not null default '#ffffff',
 
-        primary key (user_id, name),
         foreign key (user_id) references users (id)
 );
 
 create table audio_tags (
-        tag_user_id int not null,
-        tag_name varchar(25) not null,
+        tag_id int not null,
         audio_id int not null,
 
-        primary key (tag_name, audio_id),
-        foreign key (tag_user_id, tag_name) references tags (user_id, name),
+        primary key (tag_id, audio_id),
+        foreign key (tag_id) references tags (id),
         foreign key (audio_id) references audios (id)
 )
