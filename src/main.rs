@@ -19,7 +19,7 @@ use axum::{
         header::{AUTHORIZATION, CONTENT_TYPE},
         HeaderValue, Method,
     },
-    routing::{get, post, put},
+    routing::{delete, get, post, put},
     Extension, Router,
 };
 use jsonwebtoken::{DecodingKey, EncodingKey};
@@ -69,7 +69,8 @@ async fn axum(
     let audio_routes = Router::new()
         .route("/", get(all_audios).post(new_audio))
         .route("/:audio_id", get(get_audio))
-        .route("/:audio_id/file", get(get_audio_file));
+        .route("/:audio_id/file", get(get_audio_file))
+        .route("/:audio_id", delete(delete_audio));
 
     let user_routes = Router::new()
         .route("/", get(get_user))

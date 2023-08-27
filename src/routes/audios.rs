@@ -1,4 +1,4 @@
-use std::io;
+use std::{io, path::PathBuf};
 
 use anyhow::Context;
 use axum::{
@@ -76,6 +76,18 @@ pub async fn all_audios(
     Ok((StatusCode::OK, Json(audios)))
 }
 
+pub async fn delete_audio(
+    Extension(pool): Extension<PgPool>,
+    Path(audio_id): Path<i32>,
+    claims: Claims,
+) -> crate::Result<StatusCode> {
+    database::delete_audio(&pool, claims.user_id, audio_id).await?;
+    tokio::fs::remove_file(get_audio_file_path(audio_id))
+        .await
+        .context("failed to remove audio file")?;
+    Ok(StatusCode::OK)
+}
+
 pub async fn new_audio(
     Extension(state): Extension<AppState>,
     claims: Claims,
@@ -83,11 +95,18 @@ pub async fn new_audio(
 ) -> crate::Result<StatusCode> {
     let id = database::insert_audio_by(&state.pool, claims.user_id).await?;
     // TODO: use file's sha256 as path
-    let path = id.to_string();
+    let path = get_audio_file_path(id);
     stream_to_file(&path, body).await?;
 
     tokio::spawn(async move {
-        match state.whisper.transcribe(&path).await {
+        let file = match tokio::fs::File::open(&path).await {
+            Ok(file) => file,
+            Err(err) => {
+                tracing::error!("failed to open audio file {:?}: {}", path, err);
+                return;
+            }
+        };
+        match state.whisper.transcribe(file).await {
             Ok(transcription) => {
                 if let Err(err) =
                     database::update_audio_transcription(&state.pool, id, &transcription).await
@@ -105,7 +124,7 @@ pub async fn new_audio(
 }
 
 // Save a `Stream` to a file
-async fn stream_to_file<S, E>(path: &str, stream: S) -> crate::Result<()>
+async fn stream_to_file<S, E>(path: &std::path::Path, stream: S) -> crate::Result<()>
 where
     S: Stream<Item = Result<Bytes, E>>,
     E: Into<BoxError>,
@@ -117,7 +136,6 @@ where
         futures::pin_mut!(body_reader);
 
         // Create the file. `File` implements `AsyncWrite`.
-        let path = std::path::Path::new(crate::UPLOADS_DIRECTORY).join(path);
         let mut file = BufWriter::new(File::create(path).await?);
 
         // Copy the body into the file.
@@ -129,4 +147,8 @@ where
     .context("failed to save file")?;
 
     Ok(())
+}
+
+fn get_audio_file_path(audio_id: i32) -> PathBuf {
+    std::path::Path::new(crate::UPLOADS_DIRECTORY).join(audio_id.to_string())
 }
