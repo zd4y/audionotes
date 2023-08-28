@@ -19,6 +19,8 @@ use crate::{
     ApiError, AppState, Claims, Whisper,
 };
 
+const AUDIO_FILE_EXTENSION: &str = ".webm";
+
 pub async fn get_audio(
     Extension(pool): Extension<PgPool>,
     claims: Claims,
@@ -129,7 +131,7 @@ pub async fn delete_audio(
     if !deleted {
         return Err(ApiError::NotFound);
     }
-    tokio::fs::remove_file(get_audio_file_path(audio_id))
+    tokio::fs::remove_file(get_audio_file_path(audio_id, AUDIO_FILE_EXTENSION))
         .await
         .context("failed to remove audio file")?;
     Ok(StatusCode::OK)
@@ -142,7 +144,7 @@ pub async fn new_audio(
 ) -> crate::Result<StatusCode> {
     let id = database::insert_audio_by(&state.pool, claims.user_id).await?;
     // TODO: use file's sha256 as path
-    let path = get_audio_file_path(id);
+    let path = get_audio_file_path(id, AUDIO_FILE_EXTENSION);
     let file_length = stream_to_file(&path, body).await?;
 
     tokio::spawn(async move {
@@ -198,6 +200,6 @@ where
     .context("failed to save file")?)
 }
 
-fn get_audio_file_path(audio_id: i32) -> PathBuf {
-    std::path::Path::new(crate::UPLOADS_DIRECTORY).join(audio_id.to_string())
+fn get_audio_file_path(audio_id: i32, file_extension: &str) -> PathBuf {
+    std::path::Path::new(crate::UPLOADS_DIRECTORY).join(format!("{}{}", audio_id, file_extension))
 }
