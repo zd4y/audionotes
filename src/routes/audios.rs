@@ -147,6 +147,13 @@ pub async fn new_audio(
     let file_length = stream_to_file(&path, body).await?;
 
     tokio::spawn(async move {
+        let file_name = match path.file_name().map(|s| s.to_string_lossy().to_string()) {
+            Some(file_name) => file_name,
+            None => {
+                tracing::error!("failed to get audio filename: path.file_name() returned None");
+                return;
+            }
+        };
         let file = match tokio::fs::File::open(&path).await {
             Ok(file) => file,
             Err(err) => {
@@ -156,7 +163,7 @@ pub async fn new_audio(
         };
         match state
             .whisper
-            .transcribe(file, file_length, &claims.language)
+            .transcribe(file, &file_name, file_length, &claims.language)
             .await
         {
             Ok(transcription) => {
