@@ -57,8 +57,7 @@ pub async fn get_audio_file(
         return Err(ApiError::NotFound);
     }
 
-    let path_str = format!("{}/{}", crate::UPLOADS_DIRECTORY, audio.id);
-    let path = std::path::Path::new(&path_str);
+    let path = get_audio_file_path(audio.id, AUDIO_FILE_EXTENSION);
     let file = match tokio::fs::File::open(path).await {
         Ok(file) => file,
         Err(err) => {
