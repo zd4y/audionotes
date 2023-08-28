@@ -11,7 +11,7 @@ pub use api_error::{ApiError, Result};
 pub use claims::Claims;
 use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer};
 pub use whisper::Whisper;
-use whisper::WhisperMock;
+use whisper::WhisperApi;
 
 use anyhow::Context;
 use axum::{
@@ -57,13 +57,14 @@ async fn axum(
     };
 
     let allowed_origin = secret_store.get("allowed_origin").unwrap();
+    let openai_api_key = secret_store.get("openai_api_key").unwrap();
 
     let app_state = AppStateW(Arc::new(AppStateInner {
         pool: pool.clone(),
         secret_store,
         rand_rng,
         keys,
-        whisper: WhisperMock,
+        whisper: WhisperApi::new(openai_api_key),
     }));
 
     let audio_routes = Router::new()
@@ -97,7 +98,7 @@ async fn axum(
     Ok(app.into())
 }
 
-pub type AppState = AppStateW<WhisperMock>;
+pub type AppState = AppStateW<WhisperApi>;
 
 #[derive(Clone)]
 pub struct AppStateW<W: Whisper>(Arc<AppStateInner<W>>);
@@ -114,7 +115,7 @@ where
 }
 
 impl Deref for AppState {
-    type Target = AppStateInner<WhisperMock>;
+    type Target = AppStateInner<WhisperApi>;
 
     fn deref(&self) -> &Self::Target {
         &self.0

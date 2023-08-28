@@ -4,6 +4,7 @@ use serde::Serialize;
 #[derive(Serialize)]
 pub struct User {
     pub email: String,
+    pub language: String,
 }
 
 #[derive(Serialize)]

@@ -63,6 +63,7 @@ pub async fn authorize(
     let claims = Claims {
         user_id: user.id,
         email: user.email,
+        language: user.language,
         exp: expiration_date.timestamp(),
     };
 
@@ -80,6 +81,7 @@ pub async fn get_user(claims: Claims) -> (StatusCode, Json<User>) {
         StatusCode::OK,
         Json(User {
             email: claims.email,
+            language: claims.language,
         }),
     )
 }

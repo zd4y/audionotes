@@ -143,7 +143,7 @@ pub async fn new_audio(
     let id = database::insert_audio_by(&state.pool, claims.user_id).await?;
     // TODO: use file's sha256 as path
     let path = get_audio_file_path(id);
-    stream_to_file(&path, body).await?;
+    let file_length = stream_to_file(&path, body).await?;
 
     tokio::spawn(async move {
         let file = match tokio::fs::File::open(&path).await {
@@ -153,7 +153,11 @@ pub async fn new_audio(
                 return;
             }
         };
-        match state.whisper.transcribe(file).await {
+        match state
+            .whisper
+            .transcribe(file, file_length, &claims.language)
+            .await
+        {
             Ok(transcription) => {
                 if let Err(err) =
                     database::update_audio_transcription(&state.pool, id, &transcription).await
@@ -171,12 +175,12 @@ pub async fn new_audio(
 }
 
 // Save a `Stream` to a file
-async fn stream_to_file<S, E>(path: &std::path::Path, stream: S) -> crate::Result<()>
+async fn stream_to_file<S, E>(path: &std::path::Path, stream: S) -> crate::Result<u64>
 where
     S: Stream<Item = Result<Bytes, E>>,
     E: Into<BoxError>,
 {
-    async {
+    Ok(async {
         // Convert the stream into an `AsyncRead`.
         let body_with_io_error = stream.map_err(|err| io::Error::new(io::ErrorKind::Other, err));
         let body_reader = StreamReader::new(body_with_io_error);
@@ -186,14 +190,12 @@ where
         let mut file = BufWriter::new(File::create(path).await?);
 
         // Copy the body into the file.
-        tokio::io::copy(&mut body_reader, &mut file).await?;
+        let total_bytes = tokio::io::copy(&mut body_reader, &mut file).await?;
 
-        Ok::<_, io::Error>(())
+        Ok::<_, io::Error>(total_bytes)
     }
     .await
-    .context("failed to save file")?;
-
-    Ok(())
+    .context("failed to save file")?)
 }
 
 fn get_audio_file_path(audio_id: i32) -> PathBuf {

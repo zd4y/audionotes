@@ -15,6 +15,7 @@ use crate::{ApiError, AppState};
 pub struct Claims {
     pub user_id: i32,
     pub email: String,
+    pub language: String,
     pub exp: i64,
 }
 
