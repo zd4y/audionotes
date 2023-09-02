@@ -10,6 +10,13 @@ pub struct DbTag {
     pub color: Option<String>,
 }
 
+pub async fn get_all_tags(pool: &PgPool, user_id: i32) -> sqlx::Result<Vec<DbTag>> {
+    sqlx::query_as("select id, user_id, name, color from tags where user_id = $1")
+        .bind(user_id)
+        .fetch_all(pool)
+        .await
+}
+
 pub async fn get_audio_tags(pool: &PgPool, audio_id: i32) -> sqlx::Result<Vec<DbTag>> {
     sqlx::query_as(
         "select t.id, t.user_id, t.name, t.color

@@ -72,7 +72,8 @@ async fn axum(
         .route("/:audio_id", get(get_audio))
         .route("/:audio_id/file", get(get_audio_file))
         .route("/:audio_id", delete(delete_audio))
-        .route("/:audio_id/tags", put(tag_audio));
+        .route("/:audio_id/tags", put(tag_audio))
+        .route("/tags", get(all_tags));
 
     let user_routes = Router::new()
         .route("/", get(get_user))

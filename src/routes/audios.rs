@@ -121,6 +121,18 @@ pub async fn tag_audio(
     Ok(StatusCode::OK)
 }
 
+pub async fn all_tags(
+    Extension(pool): Extension<PgPool>,
+    claims: Claims,
+) -> crate::Result<(StatusCode, Json<Vec<Tag>>)> {
+    let tags = database::get_all_tags(&pool, claims.user_id)
+        .await?
+        .into_iter()
+        .map(Tag::from)
+        .collect();
+    Ok((StatusCode::OK, Json(tags)))
+}
+
 pub async fn delete_audio(
     Extension(pool): Extension<PgPool>,
     Path(audio_id): Path<i32>,
