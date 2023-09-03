@@ -24,10 +24,15 @@ pub async fn get_audio_by(
 }
 
 pub async fn get_audios_by(pool: &PgPool, user_id: i32) -> sqlx::Result<Vec<DbAudio>> {
-    sqlx::query_as("select id, transcription, created_at, user_id from audios where user_id = $1")
-        .bind(user_id)
-        .fetch_all(pool)
-        .await
+    sqlx::query_as(
+        "select id, transcription, created_at, user_id
+         from audios
+         where user_id = $1
+         order by id",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
 }
 
 pub async fn insert_audio_by(pool: &PgPool, user_id: i32) -> sqlx::Result<i32> {
