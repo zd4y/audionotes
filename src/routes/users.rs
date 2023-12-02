@@ -142,14 +142,7 @@ pub async fn password_reset(
         tokio::spawn(async move {
             let email_body = "Your password has been updated successfully.";
             let subject = "Password updated";
-            match send_email(
-                &state.config,
-                subject,
-                email_body.to_string(),
-                &user.email,
-            )
-            .await
-            {
+            match send_email(&state.config, subject, email_body.to_string(), &user.email).await {
                 Ok(()) => {}
                 Err(err) => tracing::error!("error sending email: {}", err),
             };
@@ -241,10 +234,7 @@ async fn send_email(
         .body(body)
         .unwrap();
 
-    let creds = Credentials::new(
-        config.smtp_username.clone(),
-        config.smtp_password.clone(),
-    );
+    let creds = Credentials::new(config.smtp_username.clone(), config.smtp_password.clone());
 
     let mailer: AsyncSmtpTransport<Tokio1Executor> =
         AsyncSmtpTransport::<Tokio1Executor>::relay(&config.smtp_relay)

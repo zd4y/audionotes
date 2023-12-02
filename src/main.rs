@@ -5,7 +5,7 @@ mod models;
 mod routes;
 mod stt;
 
-use std::{sync::Arc, net::SocketAddr};
+use std::{net::SocketAddr, sync::Arc};
 
 pub use api_error::{ApiError, Result};
 pub use claims::Claims;
@@ -35,7 +35,9 @@ const MAX_BYTES_TO_SAVE: usize = 25 * 1_000_000;
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
-    dotenvy::dotenv()?;
+    if let Err(err) = dotenvy::dotenv() {
+        tracing::warn!("failed to load .env: {err}")
+    };
 
     let config = Config::new()?;
 
