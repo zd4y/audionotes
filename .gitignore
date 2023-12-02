@@ -1,5 +1,4 @@
 /target
-Secrets*.toml
-!Secrets.example.toml
+.env
 .direnv/
 uploads/

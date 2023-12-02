@@ -13,9 +13,8 @@ use lettre::{
 };
 use ring::rand::SecureRandom;
 use serde::{Deserialize, Serialize};
-use shuttle_secrets::SecretStore;
 
-use crate::{database, models::User, ApiError, AppState, Claims};
+use crate::{database, models::User, ApiError, AppState, Claims, Config};
 
 const TOKEN_BYTES: usize = 48;
 
@@ -144,7 +143,7 @@ pub async fn password_reset(
             let email_body = "Your password has been updated successfully.";
             let subject = "Password updated";
             match send_email(
-                &state.secret_store,
+                &state.config,
                 subject,
                 email_body.to_string(),
                 &user.email,
@@ -178,7 +177,7 @@ pub async fn request_password_reset(
     let token = generate_token(&state.rand_rng)?;
     let token_hash = hash(&token)?;
 
-    let link = state.secret_store.get("password_reset_link").unwrap();
+    let link = &state.config.password_reset_link;
 
     let user = match database::find_user_by_email(&state.pool, &payload.email).await? {
         Some(user) => user,
@@ -197,7 +196,7 @@ If you didn't initialize any password reset, you can safely ignore this message.
 
     tokio::spawn(async move {
         let subject = "Password reset link";
-        match send_email(&state.secret_store, subject, email_body, &user.email).await {
+        match send_email(&state.config, subject, email_body, &user.email).await {
             Ok(()) => {}
             Err(err) => tracing::error!("error sending email: {}", err),
         };
@@ -222,7 +221,7 @@ fn generate_token(rng: &dyn SecureRandom) -> anyhow::Result<String> {
 }
 
 async fn send_email(
-    secret_store: &SecretStore,
+    config: &Config,
     subject: &str,
     body: String,
     user_email: &str,
@@ -235,7 +234,7 @@ async fn send_email(
     };
 
     let email = Message::builder()
-        .from(secret_store.get("smtp_from").unwrap().parse().unwrap())
+        .from(config.smtp_from.parse().unwrap())
         .to(to_mbox)
         .subject(subject)
         .header(ContentType::TEXT_PLAIN)
@@ -243,12 +242,12 @@ async fn send_email(
         .unwrap();
 
     let creds = Credentials::new(
-        secret_store.get("smtp_username").unwrap(),
-        secret_store.get("smtp_password").unwrap(),
+        config.smtp_username.clone(),
+        config.smtp_password.clone(),
     );
 
     let mailer: AsyncSmtpTransport<Tokio1Executor> =
-        AsyncSmtpTransport::<Tokio1Executor>::relay(&secret_store.get("smtp_relay").unwrap())
+        AsyncSmtpTransport::<Tokio1Executor>::relay(&config.smtp_relay)
             .unwrap()
             .credentials(creds)
             .build();

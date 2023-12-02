@@ -5,7 +5,7 @@ mod models;
 mod routes;
 mod stt;
 
-use std::sync::Arc;
+use std::{sync::Arc, net::SocketAddr};
 
 pub use api_error::{ApiError, Result};
 pub use claims::Claims;
@@ -24,7 +24,6 @@ use axum::{
 };
 use jsonwebtoken::{DecodingKey, EncodingKey};
 use ring::rand::SystemRandom;
-use shuttle_secrets::SecretStore;
 use sqlx::PgPool;
 
 use routes::{audios::*, ping, users::*};
@@ -32,11 +31,14 @@ use routes::{audios::*, ping, users::*};
 const UPLOADS_DIRECTORY: &str = "uploads";
 const MAX_BYTES_TO_SAVE: usize = 25 * 1_000_000;
 
-#[shuttle_runtime::main]
-async fn axum(
-    #[shuttle_shared_db::Postgres] pool: PgPool,
-    #[shuttle_secrets::Secrets] secret_store: SecretStore,
-) -> shuttle_axum::ShuttleAxum {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt::init();
+
+    let config = Config::new()?;
+
+    let pool = PgPool::connect(&config.database_url).await?;
+
     sqlx::migrate!()
         .run(&pool)
         .await
@@ -49,19 +51,18 @@ async fn axum(
     }
 
     let rand_rng = SystemRandom::new();
-    let secret = secret_store.get("jwt_secret").unwrap();
-    let secret = secret.as_bytes();
+    let secret = config.jwt_secret.as_bytes();
     let keys = Keys {
         encoding: EncodingKey::from_secret(secret),
         decoding: DecodingKey::from_secret(secret),
     };
 
-    let allowed_origin = secret_store.get("allowed_origin").unwrap();
-    let openai_api_key = secret_store.get("openai_api_key").unwrap();
+    let openai_api_key = config.openai_api_key.clone().unwrap();
+    let allowed_origin = config.allowed_origin.clone();
 
     let app_state = Arc::new(AppStateInner {
         pool: pool.clone(),
-        secret_store,
+        config,
         rand_rng,
         keys,
         stt: Box::new(WhisperApi::new(openai_api_key)),
@@ -96,17 +97,60 @@ async fn axum(
             .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE]),
     );
 
-    Ok(app.into())
+    let addr = SocketAddr::from(([127, 0, 0, 1], 8000));
+    tracing::debug!("listening on {addr}");
+    axum::Server::bind(&addr)
+        .serve(app.into_make_service())
+        .await?;
+
+    Ok(())
 }
 
 pub type AppState = Arc<AppStateInner>;
 
 pub struct AppStateInner {
     pool: PgPool,
-    secret_store: SecretStore,
+    config: Config,
     rand_rng: SystemRandom,
     keys: Keys,
     stt: Box<dyn SpeechToText + Send + Sync>,
+}
+
+pub struct Config {
+    database_url: String,
+    jwt_secret: String,
+    allowed_origin: String,
+    openai_api_key: Option<String>,
+    smtp_from: String,
+    smtp_username: String,
+    smtp_password: String,
+    smtp_relay: String,
+    password_reset_link: String,
+}
+
+impl Config {
+    fn new() -> anyhow::Result<Config> {
+        let database_url = std::env::var("DATABASE_URL")?;
+        let jwt_secret = std::env::var("JWT_SECRET")?;
+        let allowed_origin = std::env::var("ALLOWED_ORIGIN")?;
+        let openai_api_key = std::env::var("OPENAI_API_KEY").ok();
+        let smtp_from = std::env::var("SMTP_FROM")?;
+        let smtp_username = std::env::var("SMTP_USERNAME")?;
+        let smtp_password = std::env::var("SMTP_PASSWORD")?;
+        let smtp_relay = std::env::var("SMTP_RELAY")?;
+        let password_reset_link = std::env::var("PASSWORD_RESET_LINK")?;
+        Ok(Config {
+            database_url,
+            jwt_secret,
+            allowed_origin,
+            openai_api_key,
+            smtp_from,
+            smtp_username,
+            smtp_password,
+            smtp_relay,
+            password_reset_link,
+        })
+    }
 }
 
 pub struct Keys {
