@@ -4,7 +4,7 @@ use anyhow::Context;
 use axum::{
     body::{Bytes, StreamBody},
     extract::{BodyStream, Path},
-    http::StatusCode,
+    http::{StatusCode, HeaderMap, header::CONTENT_TYPE},
     BoxError, Extension, Json,
 };
 use futures::{Stream, TryStreamExt};
@@ -20,6 +20,7 @@ use crate::{
 };
 
 const AUDIO_FILE_EXTENSION: &str = ".webm";
+const AUDIO_FILE_MIMETYPE: &str = "audio/webm";
 
 pub async fn get_audio(
     Extension(pool): Extension<PgPool>,
@@ -151,8 +152,14 @@ pub async fn delete_audio(
 pub async fn new_audio(
     Extension(state): Extension<AppState>,
     claims: Claims,
+    headers: HeaderMap,
     body: BodyStream,
 ) -> crate::Result<StatusCode> {
+    let content_type = headers.get(CONTENT_TYPE).ok_or(ApiError::BadRequest)?;
+    if content_type.to_str().map_err(|_| ApiError::BadRequest)? != AUDIO_FILE_MIMETYPE {
+        return Err(ApiError::BadRequest);
+    };
+
     let id = database::insert_audio_by(&state.pool, claims.user_id).await?;
     // TODO: use file's sha256 as path
     let path = get_audio_file_path(id, AUDIO_FILE_EXTENSION);
