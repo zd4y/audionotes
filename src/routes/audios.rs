@@ -1,4 +1,4 @@
-use std::{io, path::PathBuf};
+use std::{io, path::PathBuf, time::Duration};
 
 use anyhow::Context;
 use axum::{
@@ -7,7 +7,7 @@ use axum::{
     http::{header::CONTENT_TYPE, HeaderMap, StatusCode},
     BoxError, Extension, Json,
 };
-use futures::{Stream, TryStreamExt};
+use futures::{future::BoxFuture, FutureExt, Stream, TryStreamExt};
 use serde::Deserialize;
 use sqlx::PgPool;
 use tokio::{fs::File, io::BufWriter};
@@ -58,7 +58,7 @@ pub async fn get_audio_file(
         return Err(ApiError::NotFound);
     }
 
-    let path = get_audio_file_path(audio.id, AUDIO_FILE_EXTENSION);
+    let path = get_audio_file_path(audio.id);
     let file = match tokio::fs::File::open(path).await {
         Ok(file) => file,
         Err(err) => {
@@ -143,7 +143,7 @@ pub async fn delete_audio(
     if !deleted {
         return Err(ApiError::NotFound);
     }
-    tokio::fs::remove_file(get_audio_file_path(audio_id, AUDIO_FILE_EXTENSION))
+    tokio::fs::remove_file(get_audio_file_path(audio_id))
         .await
         .context("failed to remove audio file")?;
     Ok(StatusCode::OK)
@@ -162,39 +162,14 @@ pub async fn new_audio(
 
     let id = database::insert_audio_by(&state.pool, claims.user_id).await?;
     // TODO: use file's sha256 as path
-    let path = get_audio_file_path(id, AUDIO_FILE_EXTENSION);
-    let file_length = stream_to_file(&path, body).await?;
+    let path = get_audio_file_path(id);
+    stream_to_file(&path, body).await?;
 
     tokio::spawn(async move {
-        let file_name = match path.file_name().map(|s| s.to_string_lossy().to_string()) {
-            Some(file_name) => file_name,
-            None => {
-                tracing::error!("failed to get audio filename: path.file_name() returned None");
-                return;
-            }
-        };
-        let file = match tokio::fs::File::open(&path).await {
-            Ok(file) => file,
-            Err(err) => {
-                tracing::error!("failed to open audio file {:?}: {}", path, err);
-                return;
-            }
-        };
-        match state
-            .stt
-            .transcribe(file, &file_name, file_length, &claims.language)
-            .await
+        if let Err(err) =
+            transcribe_and_update_retrying(&state, id, &path, &claims.language, None).await
         {
-            Ok(transcription) => {
-                if let Err(err) =
-                    database::update_audio_transcription(&state.pool, id, &transcription).await
-                {
-                    tracing::error!("failed to update audio transcription: {}", err);
-                }
-            }
-            Err(err) => {
-                tracing::error!("failed to transcribe audio with id {}: {}", id, err);
-            }
+            tracing::error!("failed to transcribe and update retrying: {err}")
         }
     });
 
@@ -225,6 +200,77 @@ where
     .context("failed to save file")?)
 }
 
-fn get_audio_file_path(audio_id: i32, file_extension: &str) -> PathBuf {
-    std::path::Path::new(crate::UPLOADS_DIRECTORY).join(format!("{}{}", audio_id, file_extension))
+pub(crate) fn get_audio_file_path(audio_id: i32) -> PathBuf {
+    std::path::Path::new(crate::UPLOADS_DIRECTORY)
+        .join(format!("{}{}", audio_id, AUDIO_FILE_EXTENSION))
+}
+
+pub(crate) fn transcribe_and_update_retrying<'a>(
+    state: &'a AppState,
+    audio_id: i32,
+    file_path: &'a std::path::Path,
+    language: &'a str,
+    failed_audio_transcription_id: Option<i32>,
+) -> BoxFuture<'a, anyhow::Result<()>> {
+    async move {
+        if let Some(failed_audio_transcription_id) = failed_audio_transcription_id {
+            let retries = database::get_failed_audio_transcription_retries(&state.pool, failed_audio_transcription_id).await.context("failed to get audio transcription retries")?;
+            if retries >= 3 {
+                anyhow::bail!("reached maximum retries for failed audio transcription with id: {failed_audio_transcription_id}");
+            }
+
+            // wait before retrying, a minute for each retry
+            let duration = Duration::from_secs(60 * (retries + 1) as u64);
+            tracing::info!("retrying transcription of audio {audio_id} in {duration:?}");
+            tokio::time::sleep(duration).await;
+        }
+
+        match transcribe_and_update(state, audio_id, file_path, language).await {
+            Ok(()) => match failed_audio_transcription_id {
+                Some(failed_audio_transcription_id) => {
+                    database::delete_failed_audio_transcription(&state.pool, failed_audio_transcription_id).await?;
+                    Ok(())
+                },
+                None => Ok(())
+            }
+            Err(err) => {
+                tracing::error!("failed to transcribe audio with id {audio_id}: {err}");
+
+                let failed_audio_transcription_id = match failed_audio_transcription_id {
+                    Some(failed_audio_transcription_id) => {
+                        database::update_failed_audio_transcription(&state.pool, failed_audio_transcription_id).await?;
+                        failed_audio_transcription_id
+                    },
+                    None => {
+                        database::insert_failed_audio_transcription(&state.pool, audio_id, language).await?
+                    }
+                };
+
+                transcribe_and_update_retrying(
+                    state,
+                    audio_id,
+                    file_path,
+                    language,
+                    Some(failed_audio_transcription_id),
+                )
+                .await
+            }
+        }
+    }.boxed()
+}
+
+async fn transcribe_and_update(
+    state: &AppState,
+    audio_id: i32,
+    file_path: &std::path::Path,
+    language: &str,
+) -> anyhow::Result<()> {
+    let transcription = state
+        .stt
+        .transcribe(file_path, language)
+        .await?;
+    database::update_audio_transcription(&state.pool, audio_id, &transcription)
+        .await
+        .context("failed to update audio transcription")?;
+    Ok(())
 }

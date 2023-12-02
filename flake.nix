@@ -36,7 +36,7 @@
 
         devShells.default = pkgs.mkShell {
           inherit nativeBuildInputs;
-          buildInputs = buildInputs ++ [ pkgs.flyctl ];
+          buildInputs = buildInputs ++ [ pkgs.flyctl pkgs.sqlx-cli ];
         };
       }
     );

@@ -1,20 +1,15 @@
+use anyhow::Context;
 use axum::async_trait;
 use reqwest::{
     multipart::{Form, Part},
     Client,
 };
 use serde::Deserialize;
-use tokio::fs::File;
+use std::path::Path;
 
 #[async_trait]
 pub trait SpeechToText {
-    async fn transcribe(
-        &self,
-        file: File,
-        file_name: &str,
-        file_length: u64,
-        language: &str,
-    ) -> anyhow::Result<String>;
+    async fn transcribe(&self, file_path: &Path, language: &str) -> anyhow::Result<String>;
 }
 
 #[derive(Clone)]
@@ -35,13 +30,15 @@ impl WhisperApi {
 
 #[async_trait]
 impl SpeechToText for WhisperApi {
-    async fn transcribe(
-        &self,
-        file: File,
-        file_name: &str,
-        file_length: u64,
-        language: &str,
-    ) -> anyhow::Result<String> {
+    async fn transcribe(&self, file_path: &Path, language: &str) -> anyhow::Result<String> {
+        let file_name = file_path
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .context("failed to get audio filename")?;
+
+        let file = tokio::fs::File::open(file_path).await?;
+        let file_length = file.metadata().await?.len();
+
         let file_part =
             Part::stream_with_length(file, file_length).file_name(file_name.to_string());
         let form = Form::new()
@@ -85,14 +82,8 @@ pub struct SpeechToTextMock;
 
 #[async_trait]
 impl SpeechToText for SpeechToTextMock {
-    async fn transcribe(
-        &self,
-        file: File,
-        _file_name: &str,
-        _file_length: u64,
-        language: &str,
-    ) -> anyhow::Result<String> {
-        tracing::info!("transcribe with language {}: {:?}", language, file);
+    async fn transcribe(&self, file_path: &Path, language: &str) -> anyhow::Result<String> {
+        tracing::info!("transcribe with language {}: {:?}", language, file_path);
         Ok("hello".to_string())
     }
 }

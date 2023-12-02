@@ -5,7 +5,7 @@ mod models;
 mod routes;
 mod stt;
 
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 pub use api_error::{ApiError, Result};
 pub use claims::Claims;
@@ -72,6 +72,8 @@ async fn main() -> anyhow::Result<()> {
         stt: Box::new(WhisperApi::new(openai_api_key)),
     }) as AppState;
 
+    let app_state2 = Arc::clone(&app_state);
+
     let audio_routes = Router::new()
         .route("/", get(all_audios).post(new_audio))
         .route("/:audio_id", get(get_audio))
@@ -101,8 +103,14 @@ async fn main() -> anyhow::Result<()> {
             .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE]),
     );
 
+    tokio::spawn(async move {
+        if let Err(err) = transcribe_old_failed(&app_state2).await {
+            tracing::error!("failed transcribing old failed: {err}");
+        }
+    });
+
     let addr = SocketAddr::from(([127, 0, 0, 1], 8000));
-    tracing::debug!("listening on {addr}");
+    tracing::info!("listening on {addr}");
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await?;
@@ -160,4 +168,25 @@ impl Config {
 pub struct Keys {
     encoding: EncodingKey,
     decoding: DecodingKey,
+}
+
+async fn transcribe_old_failed(state: &AppState) -> anyhow::Result<()> {
+    let failed_transcriptions = database::get_failed_audio_transcriptions(&state.pool).await?;
+    for failed_transcription in failed_transcriptions {
+        let path = routes::audios::get_audio_file_path(failed_transcription.audio_id);
+        if let Err(err) = routes::audios::transcribe_and_update_retrying(
+            state,
+            failed_transcription.audio_id,
+            &path,
+            &failed_transcription.language,
+            Some(failed_transcription.id),
+        )
+        .await
+        {
+            tracing::error!("failed to transcribe and update retrying: {err}");
+        };
+        tokio::time::sleep(Duration::from_secs(60)).await;
+    }
+
+    Ok(())
 }
