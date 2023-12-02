@@ -3,15 +3,15 @@ mod claims;
 mod database;
 mod models;
 mod routes;
-mod whisper;
+mod stt;
 
-use std::{ops::Deref, sync::Arc};
+use std::sync::Arc;
 
 pub use api_error::{ApiError, Result};
 pub use claims::Claims;
+pub use stt::SpeechToText;
+use stt::WhisperApi;
 use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer};
-pub use whisper::Whisper;
-use whisper::WhisperApi;
 
 use anyhow::Context;
 use axum::{
@@ -59,13 +59,13 @@ async fn axum(
     let allowed_origin = secret_store.get("allowed_origin").unwrap();
     let openai_api_key = secret_store.get("openai_api_key").unwrap();
 
-    let app_state = AppStateW(Arc::new(AppStateInner {
+    let app_state = Arc::new(AppStateInner {
         pool: pool.clone(),
         secret_store,
         rand_rng,
         keys,
-        whisper: WhisperApi::new(openai_api_key),
-    }));
+        stt: Box::new(WhisperApi::new(openai_api_key)),
+    }) as AppState;
 
     let audio_routes = Router::new()
         .route("/", get(all_audios).post(new_audio))
@@ -99,28 +99,14 @@ async fn axum(
     Ok(app.into())
 }
 
-pub type AppState = AppStateW<WhisperApi>;
+pub type AppState = Arc<AppStateInner>;
 
-#[derive(Clone)]
-pub struct AppStateW<W: Whisper>(Arc<AppStateInner<W>>);
-
-pub struct AppStateInner<W>
-where
-    W: Whisper,
-{
+pub struct AppStateInner {
     pool: PgPool,
     secret_store: SecretStore,
     rand_rng: SystemRandom,
     keys: Keys,
-    whisper: W,
-}
-
-impl Deref for AppState {
-    type Target = AppStateInner<WhisperApi>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+    stt: Box<dyn SpeechToText + Send + Sync>,
 }
 
 pub struct Keys {

@@ -7,7 +7,7 @@ use serde::Deserialize;
 use tokio::fs::File;
 
 #[async_trait]
-pub trait Whisper {
+pub trait SpeechToText {
     async fn transcribe(
         &self,
         file: File,
@@ -34,7 +34,7 @@ impl WhisperApi {
 }
 
 #[async_trait]
-impl Whisper for WhisperApi {
+impl SpeechToText for WhisperApi {
     async fn transcribe(
         &self,
         file: File,
@@ -81,10 +81,10 @@ struct WhisperApiResponse {
 }
 
 #[derive(Clone)]
-pub struct WhisperMock;
+pub struct SpeechToTextMock;
 
 #[async_trait]
-impl Whisper for WhisperMock {
+impl SpeechToText for SpeechToTextMock {
     async fn transcribe(
         &self,
         file: File,

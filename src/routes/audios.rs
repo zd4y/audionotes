@@ -4,7 +4,7 @@ use anyhow::Context;
 use axum::{
     body::{Bytes, StreamBody},
     extract::{BodyStream, Path},
-    http::{StatusCode, HeaderMap, header::CONTENT_TYPE},
+    http::{header::CONTENT_TYPE, HeaderMap, StatusCode},
     BoxError, Extension, Json,
 };
 use futures::{Stream, TryStreamExt};
@@ -16,7 +16,7 @@ use tokio_util::io::{ReaderStream, StreamReader};
 use crate::{
     database,
     models::{Audio, Tag},
-    ApiError, AppState, Claims, Whisper,
+    ApiError, AppState, Claims,
 };
 
 const AUDIO_FILE_EXTENSION: &str = ".webm";
@@ -181,7 +181,7 @@ pub async fn new_audio(
             }
         };
         match state
-            .whisper
+            .stt
             .transcribe(file, &file_name, file_length, &claims.language)
             .await
         {
