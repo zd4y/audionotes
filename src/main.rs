@@ -35,6 +35,8 @@ const MAX_BYTES_TO_SAVE: usize = 25 * 1_000_000;
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
+    dotenvy::dotenv()?;
+
     let config = Config::new()?;
 
     let pool = PgPool::connect(&config.database_url).await?;
