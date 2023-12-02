@@ -17,7 +17,7 @@ create table audios (
 create table password_reset_tokens (
         user_id int not null,
         token varchar(255) not null unique,
-        expires_at timestamptz not null default now() + interval '5 minutes',
+        expires_at timestamptz not null default now() + interval '30 minutes',
 
         primary key (user_id, token),
         foreign key (user_id) references users (id)
