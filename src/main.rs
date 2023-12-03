@@ -31,6 +31,8 @@ use sqlx::PgPool;
 
 use routes::{audios::*, ping, users::*};
 
+use crate::audio_storage::AzureAudioStorage;
+
 const MAX_BYTES_TO_SAVE: usize = 25 * 1_000_000;
 
 #[tokio::main]
@@ -60,13 +62,24 @@ async fn main() -> anyhow::Result<()> {
     let openai_api_key = config.openai_api_key.clone().unwrap();
     let allowed_origin = config.allowed_origin.clone();
 
+    let storage: Box<dyn AudioStorage + Send + Sync> =
+        if let Some(account) = &config.azure_storage_account {
+            tracing::info!("using azure audio storage");
+            let access_key = config.azure_storage_access_key.as_ref().unwrap();
+            let container = config.azure_storage_container.as_ref().unwrap();
+            Box::new(AzureAudioStorage::new(account, access_key, container))
+        } else {
+            tracing::info!("using local audio storage");
+            Box::new(LocalAudioStorage::new().await?)
+        };
+
     let app_state = Arc::new(AppStateInner {
         pool: pool.clone(),
         config,
         rand_rng,
         keys,
         stt: Box::new(WhisperApi::new(openai_api_key)),
-        storage: Box::new(LocalAudioStorage::new().await?),
+        storage,
     }) as AppState;
 
     let app_state2 = Arc::clone(&app_state);
@@ -136,6 +149,9 @@ pub struct Config {
     smtp_password: String,
     smtp_relay: String,
     password_reset_link: String,
+    azure_storage_account: Option<String>,
+    azure_storage_access_key: Option<String>,
+    azure_storage_container: Option<String>,
 }
 
 impl Config {
@@ -149,6 +165,11 @@ impl Config {
         let smtp_password = std::env::var("SMTP_PASSWORD")?;
         let smtp_relay = std::env::var("SMTP_RELAY")?;
         let password_reset_link = std::env::var("PASSWORD_RESET_LINK")?;
+
+        let azure_storage_account = std::env::var("AZURE_STORAGE_ACCOUNT").ok();
+        let azure_storage_access_key = std::env::var("AZURE_STORAGE_ACCESS_KEY").ok();
+        let azure_storage_container = std::env::var("AZURE_STORAGE_CONTAINER").ok();
+
         Ok(Config {
             database_url,
             jwt_secret,
@@ -159,6 +180,9 @@ impl Config {
             smtp_password,
             smtp_relay,
             password_reset_link,
+            azure_storage_account,
+            azure_storage_access_key,
+            azure_storage_container,
         })
     }
 }
@@ -170,6 +194,16 @@ pub struct Keys {
 
 async fn transcribe_old_failed(state: &AppState) -> anyhow::Result<()> {
     let failed_transcriptions = database::get_failed_audio_transcriptions(&state.pool).await?;
+
+    let ids = failed_transcriptions
+        .iter()
+        .map(|i| (i.id, i.audio_id))
+        .collect::<Vec<_>>();
+    tracing::info!(
+        "retrying old failed transcriptions (id, audio_id): {:?}",
+        ids
+    );
+
     for failed_transcription in failed_transcriptions {
         if let Err(err) = routes::audios::transcribe_and_update_retrying(
             state,

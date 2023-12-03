@@ -18,7 +18,7 @@ use crate::{
     ApiError, AppState, Claims,
 };
 
-const AUDIO_FILE_MIMETYPE: &str = "audio/webm";
+pub const AUDIO_FILE_MIMETYPE: &str = "audio/webm";
 
 pub async fn get_audio(
     Extension(pool): Extension<PgPool>,
