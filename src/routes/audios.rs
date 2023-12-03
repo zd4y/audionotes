@@ -1,17 +1,16 @@
-use std::{io, path::PathBuf, time::Duration};
+use std::time::Duration;
 
 use anyhow::Context;
 use axum::{
-    body::{Bytes, StreamBody},
+    body::StreamBody,
     extract::{BodyStream, Path},
     http::{header::CONTENT_TYPE, HeaderMap, StatusCode},
-    BoxError, Extension, Json,
+    Extension, Json,
 };
-use futures::{future::BoxFuture, FutureExt, Stream, TryStreamExt};
+use futures::{future::BoxFuture, FutureExt};
 use serde::Deserialize;
 use sqlx::PgPool;
-use tokio::{fs::File, io::BufWriter};
-use tokio_util::io::{ReaderStream, StreamReader};
+use tokio_util::io::ReaderStream;
 
 use crate::{
     database,
@@ -19,7 +18,6 @@ use crate::{
     ApiError, AppState, Claims,
 };
 
-const AUDIO_FILE_EXTENSION: &str = ".webm";
 const AUDIO_FILE_MIMETYPE: &str = "audio/webm";
 
 pub async fn get_audio(
@@ -45,11 +43,11 @@ pub async fn get_audio(
 }
 
 pub async fn get_audio_file(
-    Extension(pool): Extension<PgPool>,
+    Extension(state): Extension<AppState>,
     claims: Claims,
     Path(audio_id): Path<i32>,
 ) -> crate::Result<StreamBody<ReaderStream<tokio::fs::File>>> {
-    let audio = match database::get_audio_by(&pool, audio_id, claims.user_id).await? {
+    let audio = match database::get_audio_by(&state.pool, audio_id, claims.user_id).await? {
         Some(audio) => audio,
         None => return Err(ApiError::NotFound),
     };
@@ -58,8 +56,7 @@ pub async fn get_audio_file(
         return Err(ApiError::NotFound);
     }
 
-    let path = get_audio_file_path(audio.id);
-    let file = match tokio::fs::File::open(path).await {
+    let file = match state.storage.get(audio.id).await {
         Ok(file) => file,
         Err(err) => {
             tracing::error!("tokio::fs::File::open error in get_audio_file_by: {}", err);
@@ -135,15 +132,17 @@ pub async fn all_tags(
 }
 
 pub async fn delete_audio(
-    Extension(pool): Extension<PgPool>,
+    Extension(state): Extension<AppState>,
     Path(audio_id): Path<i32>,
     claims: Claims,
 ) -> crate::Result<StatusCode> {
-    let deleted = database::delete_audio(&pool, claims.user_id, audio_id).await?;
+    let deleted = database::delete_audio(&state.pool, claims.user_id, audio_id).await?;
     if !deleted {
         return Err(ApiError::NotFound);
     }
-    tokio::fs::remove_file(get_audio_file_path(audio_id))
+    state
+        .storage
+        .delete(audio_id)
         .await
         .context("failed to remove audio file")?;
     Ok(StatusCode::OK)
@@ -161,14 +160,10 @@ pub async fn new_audio(
     };
 
     let id = database::insert_audio_by(&state.pool, claims.user_id).await?;
-    // TODO: use file's sha256 as path
-    let path = get_audio_file_path(id);
-    stream_to_file(&path, body).await?;
+    state.storage.store(id, body).await?;
 
     tokio::spawn(async move {
-        if let Err(err) =
-            transcribe_and_update_retrying(&state, id, &path, &claims.language, None).await
-        {
+        if let Err(err) = transcribe_and_update_retrying(&state, id, &claims.language, None).await {
             tracing::error!("failed to transcribe and update retrying: {err}")
         }
     });
@@ -176,39 +171,9 @@ pub async fn new_audio(
     Ok(StatusCode::CREATED)
 }
 
-// Save a `Stream` to a file
-async fn stream_to_file<S, E>(path: &std::path::Path, stream: S) -> crate::Result<u64>
-where
-    S: Stream<Item = Result<Bytes, E>>,
-    E: Into<BoxError>,
-{
-    Ok(async {
-        // Convert the stream into an `AsyncRead`.
-        let body_with_io_error = stream.map_err(|err| io::Error::new(io::ErrorKind::Other, err));
-        let body_reader = StreamReader::new(body_with_io_error);
-        futures::pin_mut!(body_reader);
-
-        // Create the file. `File` implements `AsyncWrite`.
-        let mut file = BufWriter::new(File::create(path).await?);
-
-        // Copy the body into the file.
-        let total_bytes = tokio::io::copy(&mut body_reader, &mut file).await?;
-
-        Ok::<_, io::Error>(total_bytes)
-    }
-    .await
-    .context("failed to save file")?)
-}
-
-pub(crate) fn get_audio_file_path(audio_id: i32) -> PathBuf {
-    std::path::Path::new(crate::UPLOADS_DIRECTORY)
-        .join(format!("{}{}", audio_id, AUDIO_FILE_EXTENSION))
-}
-
 pub(crate) fn transcribe_and_update_retrying<'a>(
     state: &'a AppState,
     audio_id: i32,
-    file_path: &'a std::path::Path,
     language: &'a str,
     failed_audio_transcription_id: Option<i32>,
 ) -> BoxFuture<'a, anyhow::Result<()>> {
@@ -225,7 +190,7 @@ pub(crate) fn transcribe_and_update_retrying<'a>(
             tokio::time::sleep(duration).await;
         }
 
-        match transcribe_and_update(state, audio_id, file_path, language).await {
+        match transcribe_and_update(state, audio_id, language).await {
             Ok(()) => match failed_audio_transcription_id {
                 Some(failed_audio_transcription_id) => {
                     database::delete_failed_audio_transcription(&state.pool, failed_audio_transcription_id).await?;
@@ -249,7 +214,6 @@ pub(crate) fn transcribe_and_update_retrying<'a>(
                 transcribe_and_update_retrying(
                     state,
                     audio_id,
-                    file_path,
                     language,
                     Some(failed_audio_transcription_id),
                 )
@@ -262,13 +226,10 @@ pub(crate) fn transcribe_and_update_retrying<'a>(
 async fn transcribe_and_update(
     state: &AppState,
     audio_id: i32,
-    file_path: &std::path::Path,
     language: &str,
 ) -> anyhow::Result<()> {
-    let transcription = state
-        .stt
-        .transcribe(file_path, language)
-        .await?;
+    let file = state.storage.get(audio_id).await?;
+    let transcription = state.stt.transcribe(file, language).await?;
     database::update_audio_transcription(&state.pool, audio_id, &transcription)
         .await
         .context("failed to update audio transcription")?;

@@ -79,7 +79,11 @@ pub async fn insert_audio_by(pool: &PgPool, user_id: i32) -> sqlx::Result<i32> {
     Ok(id.0)
 }
 
-pub async fn insert_failed_audio_transcription(pool: &PgPool, audio_id: i32, language: &str) -> sqlx::Result<i32> {
+pub async fn insert_failed_audio_transcription(
+    pool: &PgPool,
+    audio_id: i32,
+    language: &str,
+) -> sqlx::Result<i32> {
     let id: (i32,) = sqlx::query_as(
         "insert into failed_audio_transcriptions(audio_id, language) values ($1, $2) returning id",
     )

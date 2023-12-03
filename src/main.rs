@@ -1,4 +1,5 @@
 mod api_error;
+mod audio_storage;
 mod claims;
 mod database;
 mod models;
@@ -8,8 +9,10 @@ mod stt;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 pub use api_error::{ApiError, Result};
+use audio_storage::AudioStorage;
+use audio_storage::LocalAudioStorage;
 pub use claims::Claims;
-pub use stt::SpeechToText;
+use stt::SpeechToText;
 use stt::WhisperApi;
 use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer};
 
@@ -28,7 +31,6 @@ use sqlx::PgPool;
 
 use routes::{audios::*, ping, users::*};
 
-const UPLOADS_DIRECTORY: &str = "uploads";
 const MAX_BYTES_TO_SAVE: usize = 25 * 1_000_000;
 
 #[tokio::main]
@@ -48,12 +50,6 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("failed to run migrations")?;
 
-    if !std::path::Path::new(UPLOADS_DIRECTORY).exists() {
-        tokio::fs::create_dir(UPLOADS_DIRECTORY)
-            .await
-            .context("failed to create the uploads directory")?;
-    }
-
     let rand_rng = SystemRandom::new();
     let secret = config.jwt_secret.as_bytes();
     let keys = Keys {
@@ -70,6 +66,7 @@ async fn main() -> anyhow::Result<()> {
         rand_rng,
         keys,
         stt: Box::new(WhisperApi::new(openai_api_key)),
+        storage: Box::new(LocalAudioStorage::new().await?),
     }) as AppState;
 
     let app_state2 = Arc::clone(&app_state);
@@ -126,6 +123,7 @@ pub struct AppStateInner {
     rand_rng: SystemRandom,
     keys: Keys,
     stt: Box<dyn SpeechToText + Send + Sync>,
+    storage: Box<dyn AudioStorage + Send + Sync>,
 }
 
 pub struct Config {
@@ -173,11 +171,9 @@ pub struct Keys {
 async fn transcribe_old_failed(state: &AppState) -> anyhow::Result<()> {
     let failed_transcriptions = database::get_failed_audio_transcriptions(&state.pool).await?;
     for failed_transcription in failed_transcriptions {
-        let path = routes::audios::get_audio_file_path(failed_transcription.audio_id);
         if let Err(err) = routes::audios::transcribe_and_update_retrying(
             state,
             failed_transcription.audio_id,
-            &path,
             &failed_transcription.language,
             Some(failed_transcription.id),
         )

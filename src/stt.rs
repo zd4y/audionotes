@@ -1,15 +1,16 @@
-use anyhow::Context;
 use axum::async_trait;
 use reqwest::{
     multipart::{Form, Part},
     Client,
 };
 use serde::Deserialize;
-use std::path::Path;
+use tokio::fs::File;
+
+use crate::audio_storage::AUDIO_FILE_EXTENSION;
 
 #[async_trait]
 pub trait SpeechToText {
-    async fn transcribe(&self, file_path: &Path, language: &str) -> anyhow::Result<String>;
+    async fn transcribe(&self, file: File, language: &str) -> anyhow::Result<String>;
 }
 
 #[derive(Clone)]
@@ -17,6 +18,9 @@ pub struct WhisperApi {
     client: Client,
     openai_api_key: String,
 }
+
+#[derive(Clone)]
+pub struct SpeechToTextMock;
 
 impl WhisperApi {
     pub fn new(openai_api_key: String) -> Self {
@@ -30,17 +34,11 @@ impl WhisperApi {
 
 #[async_trait]
 impl SpeechToText for WhisperApi {
-    async fn transcribe(&self, file_path: &Path, language: &str) -> anyhow::Result<String> {
-        let file_name = file_path
-            .file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .context("failed to get audio filename")?;
-
-        let file = tokio::fs::File::open(file_path).await?;
+    async fn transcribe(&self, file: File, language: &str) -> anyhow::Result<String> {
         let file_length = file.metadata().await?.len();
 
-        let file_part =
-            Part::stream_with_length(file, file_length).file_name(file_name.to_string());
+        let file_part = Part::stream_with_length(file, file_length)
+            .file_name(format!("audio{}", AUDIO_FILE_EXTENSION));
         let form = Form::new()
             .part("file", file_part)
             .text("model", "whisper-1")
@@ -77,13 +75,10 @@ struct WhisperApiResponse {
     error: Option<serde_json::Value>,
 }
 
-#[derive(Clone)]
-pub struct SpeechToTextMock;
-
 #[async_trait]
 impl SpeechToText for SpeechToTextMock {
-    async fn transcribe(&self, file_path: &Path, language: &str) -> anyhow::Result<String> {
-        tracing::info!("transcribe with language {}: {:?}", language, file_path);
+    async fn transcribe(&self, file: File, language: &str) -> anyhow::Result<String> {
+        tracing::info!("transcribe with language {}: {:?}", language, file);
         Ok("hello".to_string())
     }
 }
