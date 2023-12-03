@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc, Duration};
+use chrono::{DateTime, Duration, Utc};
 use sqlx::{FromRow, PgPool};
 
 #[derive(FromRow, Debug)]
@@ -19,12 +19,14 @@ pub async fn get_user_tokens(pool: &PgPool, user_id: i32) -> sqlx::Result<Vec<Db
 
 pub async fn insert_token(pool: &PgPool, user_id: i32, token: String) -> sqlx::Result<()> {
     let expires_at = Utc::now() + Duration::minutes(30);
-    sqlx::query("insert into password_reset_tokens (user_id, token, expires_at) values ($1, $2, $3)")
-        .bind(user_id)
-        .bind(token)
-        .bind(expires_at)
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "insert into password_reset_tokens (user_id, token, expires_at) values ($1, $2, $3)",
+    )
+    .bind(user_id)
+    .bind(token)
+    .bind(expires_at)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
