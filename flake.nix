@@ -28,7 +28,7 @@
           dockerImage = pkgs.dockerTools.buildImage {
             name = "audionotes";
             config = {
-              Cmd = [ pkgs.lib.getExe self.packages.${system}.audionotes ];
+              Cmd = [ (pkgs.lib.getExe self.packages.${system}.audionotes) ];
             };
           };
           default = self.packages.${system}.audionotes;
