@@ -32,6 +32,7 @@ use sqlx::PgPool;
 use routes::{audios::*, ping, users::*};
 
 use crate::audio_storage::AzureAudioStorage;
+use crate::stt::PicovoiceLeopard;
 
 const MAX_BYTES_TO_SAVE: usize = 25 * 1_000_000;
 
@@ -59,7 +60,6 @@ async fn main() -> anyhow::Result<()> {
         decoding: DecodingKey::from_secret(secret),
     };
 
-    let openai_api_key = config.openai_api_key.clone().unwrap();
     let allowed_origin = config.allowed_origin.clone();
 
     let storage: Box<dyn AudioStorage + Send + Sync> =
@@ -73,12 +73,22 @@ async fn main() -> anyhow::Result<()> {
             Box::new(LocalAudioStorage::new().await?)
         };
 
+    let stt: Box<dyn SpeechToText + Send + Sync> =
+        if let Some(ref openai_api_key) = config.openai_api_key {
+            tracing::info!("using openai");
+            Box::new(WhisperApi::new(openai_api_key.to_string()))
+        } else {
+            tracing::info!("using picovoice leopard");
+            let access_key = config.picovoice_access_key.clone().unwrap();
+            Box::new(PicovoiceLeopard::new_with_languages(&["es"], access_key).await?)
+        };
+
     let app_state = Arc::new(AppStateInner {
         pool: pool.clone(),
         config,
         rand_rng,
         keys,
-        stt: Box::new(WhisperApi::new(openai_api_key)),
+        stt,
         storage,
     }) as AppState;
 
@@ -143,7 +153,6 @@ pub struct Config {
     database_url: String,
     jwt_secret: String,
     allowed_origin: String,
-    openai_api_key: Option<String>,
     smtp_from: String,
     smtp_username: String,
     smtp_password: String,
@@ -152,6 +161,8 @@ pub struct Config {
     azure_storage_account: Option<String>,
     azure_storage_access_key: Option<String>,
     azure_storage_container: Option<String>,
+    openai_api_key: Option<String>,
+    picovoice_access_key: Option<String>,
 }
 
 impl Config {
@@ -159,7 +170,6 @@ impl Config {
         let database_url = std::env::var("DATABASE_URL")?;
         let jwt_secret = std::env::var("JWT_SECRET")?;
         let allowed_origin = std::env::var("ALLOWED_ORIGIN")?;
-        let openai_api_key = std::env::var("OPENAI_API_KEY").ok();
         let smtp_from = std::env::var("SMTP_FROM")?;
         let smtp_username = std::env::var("SMTP_USERNAME")?;
         let smtp_password = std::env::var("SMTP_PASSWORD")?;
@@ -170,11 +180,13 @@ impl Config {
         let azure_storage_access_key = std::env::var("AZURE_STORAGE_ACCESS_KEY").ok();
         let azure_storage_container = std::env::var("AZURE_STORAGE_CONTAINER").ok();
 
+        let openai_api_key = std::env::var("OPENAI_API_KEY").ok();
+        let picovoice_access_key = std::env::var("PICOVOICE_ACCESS_KEY").ok();
+
         Ok(Config {
             database_url,
             jwt_secret,
             allowed_origin,
-            openai_api_key,
             smtp_from,
             smtp_username,
             smtp_password,
@@ -183,6 +195,8 @@ impl Config {
             azure_storage_account,
             azure_storage_access_key,
             azure_storage_container,
+            openai_api_key,
+            picovoice_access_key,
         })
     }
 }

@@ -2,3 +2,4 @@
 .env
 .direnv/
 uploads/
+picovoice_leopard_models/
