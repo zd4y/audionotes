@@ -44,10 +44,15 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("failed to load .env: {err}")
     };
 
-    let config = Config::new()?;
+    tracing::info!("loading config");
+    let config = Config::new().context("failed to load config")?;
 
-    let pool = PgPool::connect(&config.database_url).await?;
+    tracing::info!("connecting to database");
+    let pool = PgPool::connect(&config.database_url)
+        .await
+        .context("failed to connect to database")?;
 
+    tracing::info!("running migrations");
     sqlx::migrate!()
         .run(&pool)
         .await
@@ -62,6 +67,7 @@ async fn main() -> anyhow::Result<()> {
 
     let allowed_origin = config.allowed_origin.clone();
 
+    tracing::info!("initializing storage");
     let storage: Box<dyn AudioStorage + Send + Sync> =
         if let Some(account) = &config.azure_storage_account {
             tracing::info!("using azure audio storage");
@@ -73,6 +79,7 @@ async fn main() -> anyhow::Result<()> {
             Box::new(LocalAudioStorage::new().await?)
         };
 
+    tracing::info!("initializing speech to text");
     let stt: Box<dyn SpeechToText + Send + Sync> =
         if let Some(ref openai_api_key) = config.openai_api_key {
             tracing::info!("using openai");
@@ -80,7 +87,11 @@ async fn main() -> anyhow::Result<()> {
         } else {
             tracing::info!("using picovoice leopard");
             let access_key = config.picovoice_access_key.clone().unwrap();
-            Box::new(PicovoiceLeopard::new_with_languages(&["es"], access_key).await?)
+            Box::new(
+                PicovoiceLeopard::new_with_languages(&["es"], access_key)
+                    .await
+                    .context("failed to get PicovoiceLeopard")?,
+            )
         };
 
     let app_state = Arc::new(AppStateInner {
