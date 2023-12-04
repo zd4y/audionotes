@@ -40,10 +40,6 @@ const MAX_BYTES_TO_SAVE: usize = 25 * 1_000_000;
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
-    if let Err(err) = dotenvy::dotenv() {
-        tracing::warn!("failed to load .env: {err}")
-    };
-
     tracing::info!("loading config");
     let config = Config::new().context("failed to load config")?;
 

@@ -137,7 +137,6 @@ dependencies = [
  "azure_storage_blobs",
  "chrono",
  "data-encoding",
- "dotenvy",
  "futures",
  "jsonwebtoken",
  "lettre",
