@@ -1,20 +1,22 @@
 use anyhow::Context;
 use axum::{async_trait, extract::BodyStream, BoxError};
+use azure_core::Pageable;
 use azure_storage::StorageCredentials;
 use azure_storage_blobs::{
-    blob::{BlobBlockType, BlockList},
+    blob::{operations::GetBlobResponse, BlobBlockType, BlockList},
     prelude::{BlobClient, ClientBuilder},
 };
 use futures::{Stream, StreamExt, TryStreamExt};
 use std::{
-    io::{self, SeekFrom},
+    io,
     path::{Path, PathBuf},
+    pin::Pin,
 };
-use tokio::{
-    fs::File,
-    io::{AsyncSeekExt, AsyncWriteExt, BufWriter},
+use tokio::{fs::File, io::BufWriter};
+use tokio_util::{
+    bytes::{BufMut, Bytes, BytesMut},
+    io::{ReaderStream, StreamReader},
 };
-use tokio_util::{bytes::Bytes, io::StreamReader};
 
 use crate::routes::audios::AUDIO_FILE_MIMETYPE;
 
@@ -23,7 +25,7 @@ const UPLOADS_DIRECTORY: &str = "uploads";
 
 #[async_trait]
 pub trait AudioStorage {
-    async fn get(&self, audio_id: i32) -> anyhow::Result<File>;
+    async fn get(&self, audio_id: i32) -> anyhow::Result<AudioStream>;
 
     async fn store(&self, audio_id: i32, stream: BodyStream) -> anyhow::Result<()>;
 
@@ -53,9 +55,9 @@ impl LocalAudioStorage {
 
 #[async_trait]
 impl AudioStorage for LocalAudioStorage {
-    async fn get(&self, audio_id: i32) -> anyhow::Result<File> {
+    async fn get(&self, audio_id: i32) -> anyhow::Result<AudioStream> {
         let file = tokio::fs::File::open(self.get_path(audio_id)).await?;
-        Ok(file)
+        Ok(AudioStream::from_file(file))
     }
 
     async fn store(&self, audio_id: i32, stream: BodyStream) -> anyhow::Result<()> {
@@ -80,7 +82,7 @@ impl LocalAudioStorage {
 
 impl AzureAudioStorage {
     pub fn new(account: &str, access_key: &str, container: &str) -> AzureAudioStorage {
-        let storage_credentials = StorageCredentials::access_key(account, access_key);
+        let storage_credentials = StorageCredentials::access_key(account, access_key.to_string());
         AzureAudioStorage {
             storage_credentials,
             account: account.to_string(),
@@ -97,29 +99,13 @@ impl AzureAudioStorage {
 
 #[async_trait]
 impl AudioStorage for AzureAudioStorage {
-    async fn get(&self, audio_id: i32) -> anyhow::Result<File> {
+    async fn get(&self, audio_id: i32) -> anyhow::Result<AudioStream> {
         let blob_client = self.get_client(audio_id);
-        let mut stream = blob_client
+        let stream = blob_client
             .get()
             .chunk_size(2u64 * 1024 * 1024)
             .into_stream();
-
-        let file = tokio::task::spawn_blocking(tempfile::tempfile).await??;
-        let mut file = File::from_std(file);
-        let mut buf = BufWriter::new(&mut file);
-
-        while let Some(value) = stream.next().await {
-            let mut body = value?.data;
-            while let Some(value) = body.next().await {
-                let value = value?;
-                buf.write_all(&value).await?;
-            }
-        }
-
-        buf.flush().await?;
-        file.seek(SeekFrom::Start(0)).await?;
-
-        Ok(file)
+        Ok(AudioStream::from_pageable(stream))
     }
 
     async fn store(&self, audio_id: i32, mut stream: BodyStream) -> anyhow::Result<()> {
@@ -154,10 +140,11 @@ impl AudioStorage for AzureAudioStorage {
 
 #[async_trait]
 impl AudioStorage for MockAudioStorage {
-    async fn get(&self, audio_id: i32) -> anyhow::Result<File> {
+    async fn get(&self, audio_id: i32) -> anyhow::Result<AudioStream> {
         tracing::info!("retrieving audio file {audio_id}");
         let file = tokio::task::spawn_blocking(tempfile::tempfile).await??;
-        Ok(File::from_std(file))
+        let file = tokio::fs::File::from_std(file);
+        Ok(AudioStream::from_file(file))
     }
 
     async fn store(&self, audio_id: i32, _stream: BodyStream) -> anyhow::Result<()> {
@@ -193,4 +180,53 @@ where
     }
     .await
     .context("failed to save file")
+}
+
+pub struct AudioStream {
+    stream: Pin<Box<dyn Stream<Item = anyhow::Result<Bytes>> + Send + 'static>>,
+}
+
+impl AudioStream {
+    pub async fn into_bytes(mut self) -> anyhow::Result<Bytes> {
+        let mut result = BytesMut::new();
+        while let Some(value) = self.stream.next().await {
+            let bytes = value?;
+            result.put(bytes);
+        }
+        Ok(result.freeze())
+    }
+
+    fn from_pageable(pageable: Pageable<GetBlobResponse, azure_core::Error>) -> AudioStream {
+        let stream = pageable.then(|value| async move {
+            let mut body = value?.data;
+            let mut bytes = BytesMut::new();
+            while let Some(value) = body.next().await {
+                bytes.put(value?);
+            }
+            Ok::<_, anyhow::Error>(bytes.freeze())
+        });
+        AudioStream {
+            stream: Box::pin(stream),
+        }
+    }
+
+    fn from_file(file: File) -> AudioStream {
+        let stream =
+            ReaderStream::new(file).map(|value| value.map_err(Into::<anyhow::Error>::into));
+        let stream = Box::new(stream);
+        AudioStream {
+            stream: Box::pin(stream),
+        }
+    }
+}
+
+impl Stream for AudioStream {
+    type Item = anyhow::Result<Bytes>;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        self.stream.poll_next_unpin(cx)
+    }
 }

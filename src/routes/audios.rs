@@ -10,9 +10,9 @@ use axum::{
 use futures::{future::BoxFuture, FutureExt};
 use serde::Deserialize;
 use sqlx::PgPool;
-use tokio_util::io::ReaderStream;
 
 use crate::{
+    audio_storage::AudioStream,
     database,
     models::{Audio, Tag},
     ApiError, AppState, Claims,
@@ -46,7 +46,7 @@ pub async fn get_audio_file(
     Extension(state): Extension<AppState>,
     claims: Claims,
     Path(audio_id): Path<i32>,
-) -> crate::Result<StreamBody<ReaderStream<tokio::fs::File>>> {
+) -> crate::Result<StreamBody<AudioStream>> {
     let audio = match database::get_audio_by(&state.pool, audio_id, claims.user_id).await? {
         Some(audio) => audio,
         None => return Err(ApiError::NotFound),
@@ -56,15 +56,7 @@ pub async fn get_audio_file(
         return Err(ApiError::NotFound);
     }
 
-    let file = match state.storage.get(audio.id).await {
-        Ok(file) => file,
-        Err(err) => {
-            tracing::error!("tokio::fs::File::open error in get_audio_file_by: {}", err);
-            return Err(ApiError::InternalServerError);
-        }
-    };
-
-    let stream = ReaderStream::new(file);
+    let stream = state.storage.get(audio.id).await?;
     let body = StreamBody::new(stream);
 
     Ok(body)

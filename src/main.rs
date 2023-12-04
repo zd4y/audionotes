@@ -213,10 +213,12 @@ async fn transcribe_old_failed(state: &AppState) -> anyhow::Result<()> {
         .iter()
         .map(|i| (i.id, i.audio_id))
         .collect::<Vec<_>>();
-    tracing::info!(
-        "retrying old failed transcriptions (id, audio_id): {:?}",
-        ids
-    );
+    if !ids.is_empty() {
+        tracing::info!(
+            "retrying old failed transcriptions (id, audio_id): {:?}",
+            ids
+        );
+    }
 
     for failed_transcription in failed_transcriptions {
         if let Err(err) = routes::audios::transcribe_and_update_retrying(

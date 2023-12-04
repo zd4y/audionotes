@@ -1,19 +1,25 @@
-use std::path::{Path, PathBuf};
+use std::{
+    io,
+    path::{Path, PathBuf},
+};
 
 use axum::async_trait;
+use futures::StreamExt;
 use leopard::LeopardBuilder;
 use reqwest::{
     multipart::{Form, Part},
     Client,
 };
 use serde::Deserialize;
-use tokio::fs::File;
+use tempfile::TempDir;
+use tokio::{fs::File, io::BufWriter};
+use tokio_util::io::StreamReader;
 
-use crate::audio_storage::{stream_to_file, AUDIO_FILE_EXTENSION};
+use crate::audio_storage::{stream_to_file, AudioStream, AUDIO_FILE_EXTENSION};
 
 #[async_trait]
 pub trait SpeechToText {
-    async fn transcribe(&self, file: File, language: &str) -> anyhow::Result<String>;
+    async fn transcribe(&self, file: AudioStream, language: &str) -> anyhow::Result<String>;
 }
 
 #[derive(Clone)]
@@ -43,10 +49,14 @@ impl WhisperApi {
 
 #[async_trait]
 impl SpeechToText for WhisperApi {
-    async fn transcribe(&self, file: File, language: &str) -> anyhow::Result<String> {
-        let file_length = file.metadata().await?.len();
-
-        let file_part = Part::stream_with_length(file, file_length)
+    async fn transcribe(&self, stream: AudioStream, language: &str) -> anyhow::Result<String> {
+        // TODO: use reqwest::Body::wrap_stream instead
+        // The reason I am currently doing this is that Pageable<GetBlobResponse, azure_core::Error>
+        // is not Sync, so I can't make AudioStream Sync, and that means I can't pass it to wrap_stream
+        let bytes = stream.into_bytes().await?;
+        let length = bytes.len().try_into()?;
+        let body = reqwest::Body::from(bytes);
+        let file_part = Part::stream_with_length(body, length)
             .file_name(format!("audio{}", AUDIO_FILE_EXTENSION));
         let form = Form::new()
             .part("file", file_part)
@@ -127,29 +137,32 @@ impl<'a> PicovoiceLeopard<'a> {
 
 #[async_trait]
 impl<'a> SpeechToText for PicovoiceLeopard<'a> {
-    async fn transcribe(&self, file: File, language: &str) -> anyhow::Result<String> {
+    async fn transcribe(&self, stream: AudioStream, language: &str) -> anyhow::Result<String> {
         let model_path = self.get_model_path(language).await?;
 
-        let file = file.into_std().await;
+        let tmpdir = tokio::task::spawn_blocking(TempDir::new).await??;
+        let path = tmpdir.path().join(format!("audio{}", AUDIO_FILE_EXTENSION));
+        let mut file = File::create(&path).await?;
+        let mut writer = BufWriter::new(&mut file);
+
+        let stream = stream.map(|v| v.map_err(|err| io::Error::new(io::ErrorKind::Other, err)));
+        let mut reader = StreamReader::new(stream);
+
+        tokio::io::copy(&mut reader, &mut writer).await?;
+
         let access_key = self.access_key.clone();
         let transcript = tokio::task::spawn_blocking(move || {
-            let tmpfile = tempfile::NamedTempFile::new()?;
-            let mut writer = std::io::BufWriter::new(&tmpfile);
-            let mut reader = std::io::BufReader::new(file);
-            std::io::copy(&mut reader, &mut writer)?;
-
             let leopard = LeopardBuilder::new()
                 .access_key(&access_key)
                 .model_path(model_path)
                 .init()?;
-            let transcript = leopard.process_file(tmpfile.path())?;
-
-            drop(writer);
-            tmpfile.close()?;
+            let transcript = leopard.process_file(path)?;
 
             Ok::<_, anyhow::Error>(transcript)
         })
         .await??;
+
+        tmpdir.close()?;
 
         Ok(transcript.transcript)
     }
@@ -163,8 +176,8 @@ struct WhisperApiResponse {
 
 #[async_trait]
 impl SpeechToText for SpeechToTextMock {
-    async fn transcribe(&self, file: File, language: &str) -> anyhow::Result<String> {
-        tracing::info!("transcribe with language {}: {:?}", language, file);
+    async fn transcribe(&self, _stream: AudioStream, language: &str) -> anyhow::Result<String> {
+        tracing::info!("transcribe with language {}", language);
         Ok("hello".to_string())
     }
 }
