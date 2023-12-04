@@ -130,20 +130,23 @@ impl<'a> SpeechToText for PicovoiceLeopard<'a> {
     async fn transcribe(&self, file: File, language: &str) -> anyhow::Result<String> {
         let model_path = self.get_model_path(language).await?;
 
-        let leopard = LeopardBuilder::new()
-            .access_key(&self.access_key)
-            .model_path(model_path)
-            .init()?;
-
         let file = file.into_std().await;
+        let access_key = self.access_key.clone();
         let transcript = tokio::task::spawn_blocking(move || {
             let tmpfile = tempfile::NamedTempFile::new()?;
             let mut writer = std::io::BufWriter::new(&tmpfile);
             let mut reader = std::io::BufReader::new(file);
             std::io::copy(&mut reader, &mut writer)?;
+
+            let leopard = LeopardBuilder::new()
+                .access_key(&access_key)
+                .model_path(model_path)
+                .init()?;
             let transcript = leopard.process_file(tmpfile.path())?;
+
             drop(writer);
             tmpfile.close()?;
+
             Ok::<_, anyhow::Error>(transcript)
         })
         .await??;
