@@ -48,15 +48,15 @@ pub async fn get_audios_by(pool: &PgPool, user_id: i32) -> sqlx::Result<Vec<DbAu
 pub async fn get_failed_audio_transcription_retries(
     pool: &PgPool,
     failed_audio_transcription_id: i32,
-) -> sqlx::Result<i32> {
-    let retries: (i32,) = sqlx::query_as(
+) -> sqlx::Result<Option<i32>> {
+    let retries: Option<(i32,)> = sqlx::query_as(
         "select retries from failed_audio_transcriptions
          where id = $1",
     )
     .bind(failed_audio_transcription_id)
-    .fetch_one(pool)
+    .fetch_optional(pool)
     .await?;
-    Ok(retries.0)
+    Ok(retries.map(|v| v.0))
 }
 
 pub async fn get_failed_audio_transcriptions(

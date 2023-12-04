@@ -173,16 +173,16 @@ pub(crate) fn transcribe_and_update_retrying<'a>(
 ) -> BoxFuture<'a, anyhow::Result<()>> {
     async move {
         if let Some(failed_audio_transcription_id) = failed_audio_transcription_id {
-            let retries = database::get_failed_audio_transcription_retries(&state.pool, failed_audio_transcription_id).await.context("failed to get audio transcription retries")?;
-            if retries >= 3 {
-                anyhow::bail!("reached maximum retries for failed audio transcription with id: {failed_audio_transcription_id}");
+            match database::get_failed_audio_transcription_retries(&state.pool, failed_audio_transcription_id).await.context("failed to get audio transcription retries")? {
+                Some(retries) if retries >= 3 => {
+                    anyhow::bail!("reached maximum retries for failed audio transcription with id: {failed_audio_transcription_id}");
+                }
+                Some(_retries) => {}
+                None => return Ok(())
             }
-
-            // wait before retrying, a minute for each retry
-            let duration = Duration::from_secs(60 * (retries + 1) as u64);
-            tracing::info!("retrying transcription of audio {audio_id} in {duration:?}");
-            tokio::time::sleep(duration).await;
         }
+
+        tracing::info!("getting transcription of audio {audio_id}");
 
         match transcribe_and_update(state, audio_id, language).await {
             Ok(()) => match failed_audio_transcription_id {
@@ -204,6 +204,11 @@ pub(crate) fn transcribe_and_update_retrying<'a>(
                         database::insert_failed_audio_transcription(&state.pool, audio_id, language).await?
                     }
                 };
+
+                // wait a minute before retrying
+                let duration = Duration::from_secs(60u64);
+                tracing::info!("retrying transcription of audio {audio_id} in {duration:?}");
+                tokio::time::sleep(duration).await;
 
                 transcribe_and_update_retrying(
                     state,
