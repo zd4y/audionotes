@@ -160,9 +160,11 @@ pub async fn new_audio(
     };
 
     let id = database::insert_audio_by(&state.pool, claims.user_id).await?;
-    state.storage.store(id, body).await?;
-
     tokio::spawn(async move {
+        if let Err(err) = state.storage.store(id, body).await {
+            tracing::error!("failed to store audio with id {id}: {err}");
+        }
+
         if let Err(err) = transcribe_and_update_retrying(&state, id, &claims.language, None).await {
             tracing::error!("failed to transcribe and update retrying: {err}")
         }
