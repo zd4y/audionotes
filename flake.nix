@@ -27,6 +27,12 @@
           };
           dockerImage = pkgs.dockerTools.buildImage {
             name = "audionotes";
+
+            copyToRoot = pkgs.buildEnv {
+              name = "image-root";
+              paths = with pkgs; [ cacert ];
+            };
+
             config = {
               Cmd = [ (pkgs.lib.getExe self.packages.${system}.audionotes) ];
             };
