@@ -35,7 +35,7 @@ pub struct WhisperApi {
 pub struct PicovoiceLeopard<'a> {
     access_key: String,
     models_folder: &'a Path,
-    library_path: &'a Path,
+    library_path: PathBuf,
 }
 
 #[derive(Clone)]
@@ -110,9 +110,10 @@ impl<'a> PicovoiceLeopard<'a> {
             }
         }
 
-        let library_path = Path::new("picovoice_leopard_lib.so");
+        let current_dir = std::env::current_dir().context("failed to get current dir")?;
+        let library_path = current_dir.join("picovoice_leopard_lib.so");
         if !library_path.exists() {
-            PicovoiceLeopard::download_library(library_path).await?;
+            PicovoiceLeopard::download_library(&library_path).await?;
         }
 
         Ok(PicovoiceLeopard {

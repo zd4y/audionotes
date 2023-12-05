@@ -46,7 +46,7 @@
 
         devShells.default = pkgs.mkShell {
           inherit nativeBuildInputs;
-          buildInputs = buildInputs ++ [ pkgs.sqlx-cli ];
+          buildInputs = buildInputs ++ [ pkgs.sqlx-cli pkgs.ffmpeg ];
         };
       }
     );
