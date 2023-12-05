@@ -4,6 +4,7 @@ use std::{
     process::Stdio,
 };
 
+use anyhow::Context;
 use axum::async_trait;
 use futures::StreamExt;
 use leopard::LeopardBuilder;
@@ -15,6 +16,7 @@ use serde::Deserialize;
 use tempfile::TempDir;
 use tokio::{fs::File, io::BufWriter, process::Command};
 use tokio_util::io::StreamReader;
+use tracing::instrument;
 
 use crate::audio_storage::{stream_to_file, AudioStream, AUDIO_FILE_EXTENSION};
 
@@ -23,13 +25,13 @@ pub trait SpeechToText {
     async fn transcribe(&self, file: AudioStream, language: &str) -> anyhow::Result<String>;
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct WhisperApi {
     client: Client,
     openai_api_key: String,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct PicovoiceLeopard<'a> {
     models_folder: &'a Path,
     access_key: String,
@@ -50,6 +52,7 @@ impl WhisperApi {
 
 #[async_trait]
 impl SpeechToText for WhisperApi {
+    #[instrument]
     async fn transcribe(&self, stream: AudioStream, language: &str) -> anyhow::Result<String> {
         // TODO: use reqwest::Body::wrap_stream instead
         // The reason I am currently doing this is that Pageable<GetBlobResponse, azure_core::Error>
@@ -90,6 +93,7 @@ impl SpeechToText for WhisperApi {
 }
 
 impl<'a> PicovoiceLeopard<'a> {
+    #[instrument]
     pub async fn new_with_languages(
         languages: &'a [&'a str],
         access_key: String,
@@ -111,6 +115,7 @@ impl<'a> PicovoiceLeopard<'a> {
         })
     }
 
+    #[instrument]
     async fn download_model(folder: &Path, language: &str) -> anyhow::Result<()> {
         let base_url = "https://github.com/Picovoice/leopard/raw/master/lib/common/leopard_params";
         let url = if language == "en" {
@@ -127,6 +132,7 @@ impl<'a> PicovoiceLeopard<'a> {
         Ok(())
     }
 
+    #[instrument]
     async fn get_model_path(&self, language: &str) -> anyhow::Result<PathBuf> {
         let path = self.models_folder.join(language);
         if !path.exists() {
@@ -138,12 +144,15 @@ impl<'a> PicovoiceLeopard<'a> {
 
 #[async_trait]
 impl<'a> SpeechToText for PicovoiceLeopard<'a> {
+    #[instrument]
     async fn transcribe(&self, stream: AudioStream, language: &str) -> anyhow::Result<String> {
         let model_path = self.get_model_path(language).await?;
 
         let tmpdir = tokio::task::spawn_blocking(TempDir::new).await??;
         let path = tmpdir.path().join(format!("audio{}", AUDIO_FILE_EXTENSION));
-        let mut file = File::create(&path).await?;
+        let mut file = File::create(&path)
+            .await
+            .context("failed to create file in tmpdir")?;
         let mut writer = BufWriter::new(&mut file);
 
         let stream = stream.map(|v| v.map_err(|err| io::Error::new(io::ErrorKind::Other, err)));
@@ -167,7 +176,8 @@ impl<'a> SpeechToText for PicovoiceLeopard<'a> {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
-            .await?;
+            .await
+            .context("failed executing ffmpeg")?;
         if !exit_status.success() {
             anyhow::bail!("ffmpeg exited with non-successful exit status: {exit_status}");
         }
@@ -177,14 +187,19 @@ impl<'a> SpeechToText for PicovoiceLeopard<'a> {
             let leopard = LeopardBuilder::new()
                 .access_key(&access_key)
                 .model_path(model_path)
-                .init()?;
-            let transcript = leopard.process_file(&new_path)?;
+                .init()
+                .context("failed LeopardBuilder init")?;
+            let transcript = leopard
+                .process_file(&new_path)
+                .context("failed to process file")?;
 
             Ok::<_, anyhow::Error>(transcript)
         })
         .await??;
 
-        tokio::task::spawn_blocking(move || tmpdir.close()).await??;
+        tokio::task::spawn_blocking(move || tmpdir.close())
+            .await?
+            .context("failed to delete tmpdir")?;
 
         Ok(transcript.transcript)
     }

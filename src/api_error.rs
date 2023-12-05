@@ -21,7 +21,7 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status_code, msg) = match self {
             ApiError::InternalServerError => {
-                tracing::error!("sending error response: {:?}", self);
+                tracing::error!(?self, "sending error response");
                 (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
             }
             ApiError::NotFound => (StatusCode::NOT_FOUND, "Not found"),
@@ -49,14 +49,14 @@ impl IntoResponse for ApiError {
 
 impl From<sqlx::Error> for ApiError {
     fn from(error: sqlx::Error) -> Self {
-        tracing::error!("sqlx error: {}", error);
+        tracing::error!(%error, "sqlx error");
         ApiError::InternalServerError
     }
 }
 
 impl From<anyhow::Error> for ApiError {
     fn from(error: anyhow::Error) -> Self {
-        tracing::error!("anyhow error: {:#}", error);
+        tracing::error!(?error, "anyhow error");
         ApiError::InternalServerError
     }
 }

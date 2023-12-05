@@ -144,7 +144,7 @@ pub async fn password_reset(
             let subject = "Password updated";
             match send_email(&state.config, subject, email_body.to_string(), &user.email).await {
                 Ok(()) => {}
-                Err(err) => tracing::error!("error sending email: {}", err),
+                Err(err) => tracing::error!(?err, "error sending email"),
             };
         });
         Ok(StatusCode::NO_CONTENT)
@@ -191,7 +191,7 @@ If you didn't initialize any password reset, you can safely ignore this message.
         let subject = "Password reset link";
         match send_email(&state.config, subject, email_body, &user.email).await {
             Ok(()) => {}
-            Err(err) => tracing::error!("error sending email: {}", err),
+            Err(err) => tracing::error!(?err, "error sending email"),
         };
     });
 

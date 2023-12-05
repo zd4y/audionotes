@@ -14,7 +14,7 @@ use audio_storage::LocalAudioStorage;
 pub use claims::Claims;
 use stt::SpeechToText;
 use stt::WhisperApi;
-use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer};
+use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer, trace::TraceLayer};
 
 use anyhow::Context;
 use axum::{
@@ -121,7 +121,8 @@ async fn main() -> anyhow::Result<()> {
         .nest("/audios", audio_routes)
         .layer(Extension(app_state))
         .layer(Extension(pool))
-        .layer(RequestBodyLimitLayer::new(MAX_BYTES_TO_SAVE));
+        .layer(RequestBodyLimitLayer::new(MAX_BYTES_TO_SAVE))
+        .layer(TraceLayer::new_for_http());
 
     let app = Router::new().nest("/api", api_routes).layer(
         CorsLayer::new()
@@ -132,7 +133,7 @@ async fn main() -> anyhow::Result<()> {
 
     tokio::spawn(async move {
         if let Err(err) = transcribe_old_failed(&app_state2).await {
-            tracing::error!("failed transcribing old failed: {err}");
+            tracing::error!(?err, "failed transcribing old failed");
         }
     });
 
@@ -153,6 +154,12 @@ pub struct AppStateInner {
     keys: Keys,
     stt: Box<dyn SpeechToText + Send + Sync>,
     storage: Box<dyn AudioStorage + Send + Sync>,
+}
+
+impl std::fmt::Debug for AppStateInner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AppState <redacted>")
+    }
 }
 
 pub struct Config {
@@ -254,7 +261,7 @@ async fn transcribe_old_failed(state: &AppState) -> anyhow::Result<()> {
         )
         .await
         {
-            tracing::error!("failed to transcribe and update retrying: {err}");
+            tracing::error!(?err, "failed to transcribe and update retrying");
         };
         tokio::time::sleep(Duration::from_secs(60)).await;
     }

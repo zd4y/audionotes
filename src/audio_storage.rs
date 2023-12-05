@@ -230,3 +230,9 @@ impl Stream for AudioStream {
         self.stream.poll_next_unpin(cx)
     }
 }
+
+impl std::fmt::Debug for AudioStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AudioStream")
+    }
+}

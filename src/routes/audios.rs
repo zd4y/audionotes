@@ -10,6 +10,7 @@ use axum::{
 use futures::{future::BoxFuture, FutureExt};
 use serde::Deserialize;
 use sqlx::PgPool;
+use tracing::{instrument, Instrument};
 
 use crate::{
     audio_storage::AudioStream,
@@ -154,17 +155,18 @@ pub async fn new_audio(
     let id = database::insert_audio_by(&state.pool, claims.user_id).await?;
     tokio::spawn(async move {
         if let Err(err) = state.storage.store(id, body).await {
-            tracing::error!("failed to store audio with id {id}: {err}");
+            tracing::error!(?err, audio_id = id, "failed to store audio");
         }
 
         if let Err(err) = transcribe_and_update_retrying(&state, id, &claims.language, None).await {
-            tracing::error!("failed to transcribe and update retrying: {err}")
+            tracing::error!(?err, "failed to transcribe and update retrying")
         }
     });
 
     Ok(StatusCode::CREATED)
 }
 
+#[instrument]
 pub(crate) fn transcribe_and_update_retrying<'a>(
     state: &'a AppState,
     audio_id: i32,
@@ -193,7 +195,7 @@ pub(crate) fn transcribe_and_update_retrying<'a>(
                 None => Ok(())
             }
             Err(err) => {
-                tracing::error!("failed to transcribe audio with id {audio_id}: {err}");
+                tracing::error!(?err, audio_id, "failed to transcribe audio");
 
                 let failed_audio_transcription_id = match failed_audio_transcription_id {
                     Some(failed_audio_transcription_id) => {
@@ -219,9 +221,12 @@ pub(crate) fn transcribe_and_update_retrying<'a>(
                 .await
             }
         }
-    }.boxed()
+    }
+    .in_current_span()
+    .boxed()
 }
 
+#[instrument]
 async fn transcribe_and_update(
     state: &AppState,
     audio_id: i32,
