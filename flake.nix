@@ -12,7 +12,7 @@
         pkgs = nixpkgs.legacyPackages.${system};
         cargoToml = with builtins; (fromTOML (readFile ./Cargo.toml));
         nativeBuildInputs = [ pkgs.pkg-config ];
-        buildInputs = [ pkgs.openssl ];
+        buildInputs = [ pkgs.openssl pkgs.ffmpeg ];
       in
       {
         packages = {

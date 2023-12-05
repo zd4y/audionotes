@@ -1,6 +1,7 @@
 use std::{
     io,
     path::{Path, PathBuf},
+    process::Stdio,
 };
 
 use axum::async_trait;
@@ -12,7 +13,7 @@ use reqwest::{
 };
 use serde::Deserialize;
 use tempfile::TempDir;
-use tokio::{fs::File, io::BufWriter};
+use tokio::{fs::File, io::BufWriter, process::Command};
 use tokio_util::io::StreamReader;
 
 use crate::audio_storage::{stream_to_file, AudioStream, AUDIO_FILE_EXTENSION};
@@ -150,19 +151,40 @@ impl<'a> SpeechToText for PicovoiceLeopard<'a> {
 
         tokio::io::copy(&mut reader, &mut writer).await?;
 
+        // The MediaRecorderAPI in the frontend produces raw headerless audio,
+        // trying to transcribe those audios with this api produces an error.
+        // To fix this, repackage the files with ffmpeg.
+        // See https://stackoverflow.com/a/40117749
+        let new_path = tmpdir
+            .path()
+            .join(format!("new_audio{}", AUDIO_FILE_EXTENSION));
+        let exit_status = Command::new("ffmpeg")
+            .arg("-i")
+            .arg(&path)
+            .arg("-acodec")
+            .arg("copy")
+            .arg(&new_path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .await?;
+        if !exit_status.success() {
+            anyhow::bail!("ffmpeg exited with non-successful exit status: {exit_status}");
+        }
+
         let access_key = self.access_key.clone();
         let transcript = tokio::task::spawn_blocking(move || {
             let leopard = LeopardBuilder::new()
                 .access_key(&access_key)
                 .model_path(model_path)
                 .init()?;
-            let transcript = leopard.process_file(path)?;
+            let transcript = leopard.process_file(&new_path)?;
 
             Ok::<_, anyhow::Error>(transcript)
         })
         .await??;
 
-        tmpdir.close()?;
+        tokio::task::spawn_blocking(move || tmpdir.close()).await??;
 
         Ok(transcript.transcript)
     }
