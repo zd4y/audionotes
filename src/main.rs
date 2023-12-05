@@ -6,7 +6,7 @@ mod models;
 mod routes;
 mod stt;
 
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 pub use api_error::{ApiError, Result};
 use audio_storage::AudioStorage;
@@ -136,9 +136,8 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 8000));
-    tracing::info!("listening on {addr}");
-    axum::Server::bind(&addr)
+    tracing::info!("listening on 8000");
+    axum::Server::bind(&"0.0.0.0:8000".parse().unwrap())
         .serve(app.into_make_service())
         .await?;
 

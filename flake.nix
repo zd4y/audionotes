@@ -30,7 +30,7 @@
 
             copyToRoot = pkgs.buildEnv {
               name = "image-root";
-              paths = with pkgs; [ cacert ];
+              paths = [ pkgs.cacert ];
             };
 
             config = {
