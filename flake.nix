@@ -11,19 +11,23 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         cargoToml = with builtins; (fromTOML (readFile ./Cargo.toml));
+        name = cargoToml.package.name;
         nativeBuildInputs = [ pkgs.pkg-config ];
-        buildInputs = [ pkgs.openssl pkgs.ffmpeg ];
+        buildInputs = [ pkgs.openssl pkgs.makeWrapper ];
       in
       {
         packages = {
           audionotes = pkgs.rustPlatform.buildRustPackage {
             inherit nativeBuildInputs buildInputs;
             inherit (cargoToml.package) version;
-            pname = cargoToml.package.name;
+            pname = name;
             src = pkgs.lib.cleanSource ./.;
             doCheck = true;
             cargoLock.lockFile = ./Cargo.lock;
-            meta.mainProgram = "audionotes";
+            postInstall = ''
+              wrapProgram $out/bin/${name} --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.ffmpeg ]}
+            '';
+            meta.mainProgram = name;
           };
           dockerImage = pkgs.dockerTools.buildImage {
             name = "audionotes";
