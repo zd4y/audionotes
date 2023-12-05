@@ -3,3 +3,4 @@
 .direnv/
 uploads/
 picovoice_leopard_models/
+picovoice_leopard_lib.so

@@ -25,7 +25,7 @@
             doCheck = true;
             cargoLock.lockFile = ./Cargo.lock;
             postInstall = ''
-              wrapProgram $out/bin/${name} --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.ffmpeg ]}
+              wrapProgram $out/bin/${name} --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.ffmpeg-headless ]}
             '';
             meta.mainProgram = name;
           };

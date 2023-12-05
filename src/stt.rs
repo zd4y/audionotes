@@ -33,8 +33,9 @@ pub struct WhisperApi {
 
 #[derive(Debug, Clone)]
 pub struct PicovoiceLeopard<'a> {
-    models_folder: &'a Path,
     access_key: String,
+    models_folder: &'a Path,
+    library_path: &'a Path,
 }
 
 #[derive(Clone)]
@@ -109,9 +110,15 @@ impl<'a> PicovoiceLeopard<'a> {
             }
         }
 
+        let library_path = Path::new("picovoice_leopard_lib.so");
+        if !library_path.exists() {
+            PicovoiceLeopard::download_library(library_path).await?;
+        }
+
         Ok(PicovoiceLeopard {
-            models_folder,
             access_key,
+            models_folder,
+            library_path,
         })
     }
 
@@ -129,6 +136,16 @@ impl<'a> PicovoiceLeopard<'a> {
         let path = folder.join(language);
         stream_to_file(&path, stream).await?;
 
+        Ok(())
+    }
+
+    #[instrument]
+    async fn download_library(path: &Path) -> anyhow::Result<()> {
+        let url =
+            "https://github.com/Picovoice/leopard/raw/master/lib/linux/x86_64/libpv_leopard.so";
+        tracing::info!("fetching picovoice library");
+        let stream = reqwest::get(url).await?.bytes_stream();
+        stream_to_file(path, stream).await?;
         Ok(())
     }
 
@@ -183,10 +200,12 @@ impl<'a> SpeechToText for PicovoiceLeopard<'a> {
         }
 
         let access_key = self.access_key.clone();
+        let library_path = self.library_path.to_owned();
         let transcript = tokio::task::spawn_blocking(move || {
             let leopard = LeopardBuilder::new()
                 .access_key(&access_key)
                 .model_path(model_path)
+                .library_path(library_path)
                 .init()
                 .context("failed LeopardBuilder init")?;
             let transcript = leopard
