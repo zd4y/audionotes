@@ -8,7 +8,7 @@ use axum::{
     Extension, Json,
 };
 use futures::{future::BoxFuture, FutureExt};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use tracing::{instrument, Instrument};
 
@@ -141,12 +141,17 @@ pub async fn delete_audio(
     Ok(StatusCode::OK)
 }
 
+#[derive(Serialize)]
+pub struct NewAudioBody {
+    id: i32,
+}
+
 pub async fn new_audio(
     Extension(state): Extension<AppState>,
     claims: Claims,
     headers: HeaderMap,
     body: BodyStream,
-) -> crate::Result<StatusCode> {
+) -> crate::Result<(StatusCode, Json<NewAudioBody>)> {
     let content_type = headers.get(CONTENT_TYPE).ok_or(ApiError::BadRequest)?;
     if content_type.to_str().map_err(|_| ApiError::BadRequest)? != AUDIO_FILE_MIMETYPE {
         return Err(ApiError::BadRequest);
@@ -163,7 +168,7 @@ pub async fn new_audio(
         }
     });
 
-    Ok(StatusCode::CREATED)
+    Ok((StatusCode::CREATED, Json(NewAudioBody { id })))
 }
 
 #[instrument]
