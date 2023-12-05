@@ -217,8 +217,16 @@ async fn transcribe_old_failed(state: &AppState) -> anyhow::Result<()> {
 
     let ids = failed_transcriptions
         .iter()
+        .filter(|i| i.retries < 3)
         .map(|i| (i.id, i.audio_id))
         .collect::<Vec<_>>();
+
+    let ids_excluded = failed_transcriptions
+        .iter()
+        .filter(|i| i.retries >= 3)
+        .map(|i| (i.id, i.audio_id))
+        .collect::<Vec<_>>();
+
     if !ids.is_empty() {
         tracing::info!(
             "retrying old failed transcriptions (id, audio_id): {:?}",
@@ -226,7 +234,18 @@ async fn transcribe_old_failed(state: &AppState) -> anyhow::Result<()> {
         );
     }
 
+    if !ids_excluded.is_empty() {
+        tracing::warn!(
+            "not retrying the following old failed transcriptions (id, audio_id): {:?}",
+            ids_excluded
+        );
+    }
+
     for failed_transcription in failed_transcriptions {
+        if failed_transcription.retries >= 3 {
+            continue;
+        }
+
         if let Err(err) = routes::audios::transcribe_and_update_retrying(
             state,
             failed_transcription.audio_id,
